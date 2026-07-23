@@ -1,0 +1,8 @@
+target/
+*.iml
+.idea/
+.vscode/
+data/*.db
+data/*.db-shm
+data/*.db-wal
+!data/.gitkeep
