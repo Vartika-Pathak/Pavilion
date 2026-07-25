@@ -12,12 +12,14 @@ public class AuthDtos {
             @NotBlank String name,
             @NotBlank @Email String email,
             @NotBlank String flatNumber,
-            @NotBlank @Size(min = 8) String password) {
+            @NotBlank @Size(min = 8) String password,
+            @NotBlank String captchaToken) {
     }
 
     public record LoginRequest(
             @NotBlank @Email String email,
-            @NotBlank String password) {
+            @NotBlank String password,
+            @NotBlank String captchaToken) {
     }
 
     public record AuthUserResponse(
