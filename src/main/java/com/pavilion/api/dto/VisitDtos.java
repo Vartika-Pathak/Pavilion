@@ -22,6 +22,9 @@ public class VisitDtos {
     public record DecideVisitRequest(boolean approve) {
     }
 
+    public record ConfirmVisitRequest(@NotBlank String otpCode) {
+    }
+
     public record VisitResponse(
             Long id,
             String visitType,
@@ -34,13 +37,16 @@ public class VisitDtos {
             Instant createdAt) {
 
         public static VisitResponse from(Visit visit) {
+            // While awaiting email verification, the resident hasn't proven they can reach the
+            // visitor's inbox yet — don't hand the code back until they confirm it.
+            boolean hideOtp = "awaiting_verification".equals(visit.getStatus());
             return new VisitResponse(
                     visit.getId(),
                     visit.getVisitType(),
                     visit.getVisitorName(),
                     visit.getVisitorPhone(),
                     visit.getVisitorEmail(),
-                    visit.getOtpCode(),
+                    hideOtp ? null : visit.getOtpCode(),
                     visit.getStatus(),
                     visit.getExpiresAt(),
                     visit.getCreatedAt());

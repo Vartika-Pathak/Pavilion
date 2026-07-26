@@ -35,27 +35,45 @@ public class EmailService {
 
     /** Best-effort send: never throws, so a mail outage can't block visit creation. */
     public void sendVisitOtp(String toAddress, String visitorName, String otpCode, String visitType) {
+        send(toAddress, "Your Pavilion entry OTP", """
+                Hi %s,
+
+                You've been invited as a %s. A resident will ask you for this code — share it \
+                with them so they can confirm the visit:
+
+                %s
+
+                This code expires in 4 hours.
+                """.formatted(visitorName, visitType.replace('_', ' '), otpCode));
+    }
+
+    /** Best-effort send: never throws, so a mail outage can't block signup. */
+    public void sendSignupOtp(String toAddress, String name, String otpCode) {
+        send(toAddress, "Verify your Pavilion account", """
+                Hi %s,
+
+                Enter this code to finish creating your Pavilion account:
+
+                %s
+
+                This code expires in 10 minutes.
+                """.formatted(name, otpCode));
+    }
+
+    private void send(String toAddress, String subject, String body) {
         if (!isConfigured()) {
-            log.warn("Skipping OTP email to {} — mail is not configured.", toAddress);
+            log.warn("Skipping email to {} — mail is not configured.", toAddress);
             return;
         }
         try {
             SimpleMailMessage message = new SimpleMailMessage();
             message.setFrom(fromAddress);
             message.setTo(toAddress);
-            message.setSubject("Your Pavilion entry OTP");
-            message.setText("""
-                    Hi %s,
-
-                    You've been invited as a %s. Share this OTP with the security guard at the gate to enter:
-
-                    %s
-
-                    This code expires in 4 hours.
-                    """.formatted(visitorName, visitType.replace('_', ' '), otpCode));
+            message.setSubject(subject);
+            message.setText(body);
             mailSender.send(message);
         } catch (Exception e) {
-            log.error("Failed to send OTP email to {}", toAddress, e);
+            log.error("Failed to send email to {}", toAddress, e);
         }
     }
 }

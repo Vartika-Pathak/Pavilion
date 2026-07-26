@@ -1,8 +1,10 @@
 package com.pavilion.api.dto;
 
+import com.pavilion.api.entity.PendingSignup;
 import com.pavilion.api.entity.User;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
@@ -20,6 +22,19 @@ public class AuthDtos {
             @NotBlank @Email String email,
             @NotBlank String password,
             @NotBlank String captchaToken) {
+    }
+
+    public record VerifySignupOtpRequest(
+            @NotNull Long pendingSignupId,
+            @NotBlank String otpCode) {
+    }
+
+    /** Returned after /signup — the account isn't created yet until the emailed OTP is verified. */
+    public record SignupPendingResponse(Long pendingSignupId, String email) {
+
+        public static SignupPendingResponse from(PendingSignup pending) {
+            return new SignupPendingResponse(pending.getId(), pending.getEmail());
+        }
     }
 
     public record AuthUserResponse(

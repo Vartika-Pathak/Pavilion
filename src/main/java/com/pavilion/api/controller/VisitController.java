@@ -1,5 +1,6 @@
 package com.pavilion.api.controller;
 
+import com.pavilion.api.dto.VisitDtos.ConfirmVisitRequest;
 import com.pavilion.api.dto.VisitDtos.CreateVisitRequest;
 import com.pavilion.api.dto.VisitDtos.DecideVisitRequest;
 import com.pavilion.api.dto.VisitDtos.LookupVisitRequest;
@@ -44,6 +45,7 @@ public class VisitController {
     public VisitResponse create(@Valid @RequestBody CreateVisitRequest body, HttpServletRequest request) {
         User resident = requireUser(request);
 
+        boolean hasEmail = body.visitorEmail() != null && !body.visitorEmail().isBlank();
         String otpCode = generateOtpCode();
 
         Visit visit = new Visit();
@@ -53,13 +55,43 @@ public class VisitController {
         visit.setVisitorPhone(body.visitorPhone());
         visit.setVisitorEmail(body.visitorEmail());
         visit.setOtpCode(otpCode);
-        visit.setStatus("pending");
+        // With an email on file, the resident has to enter the OTP we send the visitor before the
+        // visit is usable at the gate — that's what proves they're really in touch with that visitor.
+        // Without an email there's nothing to verify, so fall back to the old immediate flow.
+        visit.setStatus(hasEmail ? "awaiting_verification" : "pending");
         visit.setExpiresAt(Instant.now().plus(4, ChronoUnit.HOURS));
         visit = visitRepository.save(visit);
 
-        if (body.visitorEmail() != null && !body.visitorEmail().isBlank()) {
+        if (hasEmail) {
             emailService.sendVisitOtp(body.visitorEmail(), body.visitorName(), otpCode, body.visitType());
         }
+
+        return VisitResponse.from(visit);
+    }
+
+    @PostMapping("/{id}/confirm")
+    public VisitResponse confirm(
+            @PathVariable Long id, @Valid @RequestBody ConfirmVisitRequest body, HttpServletRequest request) {
+        User resident = requireUser(request);
+
+        Visit visit = visitRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Visit not found"));
+
+        if (!visit.getResident().getId().equals(resident.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This isn't your visit");
+        }
+        if (!"awaiting_verification".equals(visit.getStatus())) {
+            throw new ApiException(HttpStatus.CONFLICT, "This visit isn't awaiting verification");
+        }
+        if (visit.getExpiresAt().isBefore(Instant.now())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "This code has expired — please log the visitor again");
+        }
+        if (!visit.getOtpCode().equals(body.otpCode())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Incorrect code — please check the email and try again");
+        }
+
+        visit.setStatus("pending");
+        visit = visitRepository.save(visit);
 
         return VisitResponse.from(visit);
     }

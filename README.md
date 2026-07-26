@@ -1,10 +1,12 @@
 # Pavilion API (Java)
 
-A Java rewrite of the Pavilion community app's backend (originally Node/Express/Drizzle), built with **Spring Boot**, **Spring Data JPA**, and **SQLite**. The existing React frontend (from the `Society-App` repo) talks to this backend unmodified — only the API server changes.
+A Java rewrite of the Pavilion community app's backend (originally Node/Express/Drizzle), built with **Spring Boot**, **Spring Data JPA**, and **SQLite**. The React frontend (from the `Society-App` repo, branch `claude/society-application-0mlog9`) talks to this backend — mostly unmodified, with a couple of small, backend-agnostic additions (see below) to support this backend's email-OTP verification steps.
 
 Currently implemented:
-- **signup / login / logout / session** (`/api/auth/*`), matching the original Node API's exact request/response shapes, protected by Google reCAPTCHA v2. Verified against the real, unmodified React frontend — signup, dashboard, session persistence, logout, and re-login all work.
-- **Entry / visitor OTP** (`/api/visits/*`) — a resident creates a visit (guest, cab/delivery, or household help), gets a 6-digit OTP that's automatically emailed to the visitor if an email was provided, and a guard or admin looks the visit up by OTP at the gate and approves or denies it.
+- **signup / login / logout / session** (`/api/auth/*`), protected by Google reCAPTCHA v2. Signup is two-step here: `POST /signup` stages the account and emails a 6-digit code; the account isn't actually created until `POST /signup/verify` is called with the correct code. (Login stays single-step.)
+- **Entry / visitor OTP** (`/api/visits/*`) — a resident creates a visit (guest, cab/delivery, or household help). If a visitor email is given, the visit starts as `awaiting_verification`: an OTP is emailed to the visitor, and the resident must confirm it via `POST /visits/{id}/confirm` before the visit becomes `pending` and usable at the gate — that's what proves the resident is actually in touch with a real visitor at that address. Without an email, the visit goes straight to `pending` (old behavior, OTP shown immediately). A guard or admin looks the visit up by OTP at the gate and approves or denies it.
+
+Because these two flows don't exist on the Node backend, the shared frontend's `signup.tsx` and `entry.tsx` branch on the *shape* of the response rather than which backend is active — Node's plain, immediate responses take the old path unchanged; this backend's staged responses trigger the new OTP-entry screens. The new endpoints are called with a small hand-written `apiPost` helper (`src/lib/api-fetch.ts` in the frontend) instead of the generated OpenAPI client, since they aren't part of the shared Node/Java API contract.
 
 More features (Maintenance, Complain, Emergency alerts, Amenities+Stripe) are being ported over next, one at a time.
 
@@ -73,4 +75,7 @@ $env:MAIL_PASSWORD="16characterapppassword"
 .\mvnw.cmd spring-boot:run
 ```
 
-If these aren't set, the server still starts fine and visits can still be created — the OTP just won't be emailed (it's still returned in the API response and visible to the resident/guard).
+If these aren't set, the server still starts fine:
+- Visits without a visitor email still work exactly as before (OTP returned immediately, no verification step).
+- Visits **with** a visitor email still get staged as `awaiting_verification`, but since no email actually goes out, check `data/pavilion.db`'s `visits` table (or the Java console logs) for the `otp_code` to complete the confirm step manually.
+- Signup OTPs behave the same way — check the `pending_signups` table for the code if mail isn't configured.
