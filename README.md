@@ -2,9 +2,11 @@
 
 A Java rewrite of the Pavilion community app's backend (originally Node/Express/Drizzle), built with **Spring Boot**, **Spring Data JPA**, and **SQLite**. The existing React frontend (from the `Society-App` repo) talks to this backend unmodified — only the API server changes.
 
-Currently implemented: **signup / login / logout / session** (`/api/auth/*`), matching the original Node API's exact request/response shapes. Verified against the real, unmodified React frontend — signup, dashboard, session persistence, logout, and re-login all work.
+Currently implemented:
+- **signup / login / logout / session** (`/api/auth/*`), matching the original Node API's exact request/response shapes, protected by Google reCAPTCHA v2. Verified against the real, unmodified React frontend — signup, dashboard, session persistence, logout, and re-login all work.
+- **Entry / visitor OTP** (`/api/visits/*`) — a resident creates a visit (guest, cab/delivery, or household help), gets a 6-digit OTP that's automatically emailed to the visitor if an email was provided, and a guard or admin looks the visit up by OTP at the gate and approves or denies it.
 
-More features (Entry/visitor OTP, Maintenance, Complain, Emergency alerts, Amenities+Stripe) are being ported over next, one at a time.
+More features (Maintenance, Complain, Emergency alerts, Amenities+Stripe) are being ported over next, one at a time.
 
 ## Requirements
 
@@ -43,7 +45,8 @@ src/main/java/com/pavilion/api/
   repository/     Spring Data repositories
   dto/            Request/response records (the API contract)
   controller/     REST endpoints
-  security/       JWT signing/verification, session cookie resolution
+  security/       JWT signing/verification, session cookie resolution, reCAPTCHA verification
+  service/        Email sending (visitor OTP)
   config/         CORS, password encoder
   exception/      Consistent JSON error responses
 ```
@@ -56,3 +59,18 @@ src/main/java/com/pavilion/api/
 | `JWT_SECRET` | insecure dev default (warns on startup) | Signs session cookies |
 | `DATABASE_PATH` | `./data/pavilion.db` | SQLite file location |
 | `ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin allowed to send credentialed requests |
+| `RECAPTCHA_SECRET_KEY` | unset (signup/login fail until set) | Google reCAPTCHA v2 server-side secret key |
+| `MAIL_USERNAME` | unset (OTP emails are skipped until set) | Gmail address used to send visitor OTP emails |
+| `MAIL_PASSWORD` | unset | Gmail **App Password** (not your regular password) — generate one at myaccount.google.com/apppasswords, and enter it here with no spaces |
+| `MAIL_HOST` | `smtp.gmail.com` | SMTP host |
+| `MAIL_PORT` | `587` | SMTP port (STARTTLS) |
+
+### Setting the mail env vars (Windows PowerShell)
+
+```powershell
+$env:MAIL_USERNAME="yourname@gmail.com"
+$env:MAIL_PASSWORD="16characterapppassword"
+.\mvnw.cmd spring-boot:run
+```
+
+If these aren't set, the server still starts fine and visits can still be created — the OTP just won't be emailed (it's still returned in the API response and visible to the resident/guard).
