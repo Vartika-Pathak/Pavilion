@@ -39,6 +39,21 @@ pnpm run dev
 
 `API_PORT=8081` points the frontend's dev proxy at this Java backend instead of the Node one. No frontend code changes needed.
 
+## Deploying (free hosting on Render)
+
+This repo includes a `Dockerfile` that builds and runs the API — Render (or any Docker host) can deploy it directly:
+
+1. Sign up at [render.com](https://render.com) (no credit card needed for the free tier) and connect your GitHub account.
+2. **New → Web Service** → pick this repo (`Pavilion`) → Render should auto-detect the `Dockerfile`. If it asks for a runtime, choose **Docker**.
+3. Instance type: **Free**.
+4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD`. Leave `PORT` alone — Render sets it automatically.
+5. Deploy. Render gives you a URL like `https://pavilion-api-xxxx.onrender.com` — that's your live backend.
+6. Once the frontend is deployed too (see its own repo), come back and set `ALLOWED_ORIGIN` to the frontend's URL, and add that same URL to the allowed domains list in the [Google reCAPTCHA admin console](https://www.google.com/recaptcha/admin).
+
+**Free-tier tradeoffs worth knowing:**
+- The disk is **ephemeral** — every redeploy or restart wipes the SQLite database (`data/pavilion.db`) and it starts empty again. Fine for testing; if you want data to persist long-term, that needs a paid plan with a persistent disk.
+- The free service **spins down after 15 minutes of inactivity** and takes ~30–50 seconds to wake back up on the next request — the first request after a quiet period will feel slow, that's normal.
+
 ## Project layout
 
 ```
