@@ -11,32 +11,35 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 import java.util.Map;
 
-// Sends over Resend's HTTPS API rather than raw SMTP — many free hosting
+// Sends over SendGrid's HTTPS API rather than raw SMTP — many free hosting
 // tiers (Render included) block outbound SMTP ports to prevent spam abuse,
-// but plain HTTPS always goes through.
+// but plain HTTPS always goes through. SendGrid only requires verifying
+// ownership of the "from" address (no domain needed) and then allows
+// sending to any recipient, unlike sandboxed providers that restrict
+// delivery to the account owner's own inbox.
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
-    private static final String RESEND_URL = "https://api.resend.com/emails";
+    private static final String SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send";
 
-    @Value("${resend.api-key:}")
+    @Value("${sendgrid.api-key:}")
     private String apiKey;
 
-    @Value("${resend.from:onboarding@resend.dev}")
+    @Value("${mail.from:}")
     private String fromAddress;
 
     private final RestClient restClient = RestClient.create();
 
     @PostConstruct
     void init() {
-        if (apiKey == null || apiKey.isBlank()) {
-            log.warn("RESEND_API_KEY is not set — OTP emails will not be sent until it's configured.");
+        if (!isConfigured()) {
+            log.warn("SENDGRID_API_KEY / MAIL_FROM are not set — OTP emails will not be sent until configured.");
         }
     }
 
     public boolean isConfigured() {
-        return apiKey != null && !apiKey.isBlank();
+        return apiKey != null && !apiKey.isBlank() && fromAddress != null && !fromAddress.isBlank();
     }
 
     /** Best-effort send: never throws, so a mail outage can't block visit creation. */
@@ -73,12 +76,12 @@ public class EmailService {
         }
         try {
             Map<String, Object> payload = Map.of(
-                    "from", fromAddress,
-                    "to", List.of(toAddress),
+                    "personalizations", List.of(Map.of("to", List.of(Map.of("email", toAddress)))),
+                    "from", Map.of("email", fromAddress),
                     "subject", subject,
-                    "text", body);
+                    "content", List.of(Map.of("type", "text/plain", "value", body)));
             restClient.post()
-                    .uri(RESEND_URL)
+                    .uri(SENDGRID_URL)
                     .header("Authorization", "Bearer " + apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(payload)
