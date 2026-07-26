@@ -46,13 +46,14 @@ This repo includes a `Dockerfile` that builds and runs the API — Render (or an
 1. Sign up at [render.com](https://render.com) (no credit card needed for the free tier) and connect your GitHub account.
 2. **New → Web Service** → pick this repo (`Pavilion`) → Render should auto-detect the `Dockerfile`. If it asks for a runtime, choose **Docker**.
 3. Instance type: **Free**.
-4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `MAIL_USERNAME`, `MAIL_PASSWORD`. Leave `PORT` alone — Render sets it automatically.
+4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `RESEND_API_KEY`. Leave `PORT` alone — Render sets it automatically.
 5. Deploy. Render gives you a URL like `https://pavilion-api-xxxx.onrender.com` — that's your live backend.
 6. Once the frontend is deployed too (see its own repo), come back and set `ALLOWED_ORIGIN` to the frontend's URL, and add that same URL to the allowed domains list in the [Google reCAPTCHA admin console](https://www.google.com/recaptcha/admin).
 
 **Free-tier tradeoffs worth knowing:**
 - The disk is **ephemeral** — every redeploy or restart wipes the SQLite database (`data/pavilion.db`) and it starts empty again. Fine for testing; if you want data to persist long-term, that needs a paid plan with a persistent disk.
 - The free service **spins down after 15 minutes of inactivity** and takes ~30–50 seconds to wake back up on the next request — the first request after a quiet period will feel slow, that's normal.
+- **Outbound SMTP is blocked** on Render's free tier (and most free hosts) as an anti-spam measure — that's why email is sent over Resend's HTTPS API instead of Gmail SMTP (see below). Plain HTTPS isn't blocked.
 
 ## Project layout
 
@@ -77,20 +78,23 @@ src/main/java/com/pavilion/api/
 | `DATABASE_PATH` | `./data/pavilion.db` | SQLite file location |
 | `ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin allowed to send credentialed requests |
 | `RECAPTCHA_SECRET_KEY` | unset (signup/login fail until set) | Google reCAPTCHA v2 server-side secret key |
-| `MAIL_USERNAME` | unset (OTP emails are skipped until set) | Gmail address used to send visitor OTP emails |
-| `MAIL_PASSWORD` | unset | Gmail **App Password** (not your regular password) — generate one at myaccount.google.com/apppasswords, and enter it here with no spaces |
-| `MAIL_HOST` | `smtp.gmail.com` | SMTP host |
-| `MAIL_PORT` | `587` | SMTP port (STARTTLS) |
+| `RESEND_API_KEY` | unset (OTP emails are skipped until set) | API key from [resend.com](https://resend.com) used to send OTP emails |
+| `MAIL_FROM` | `onboarding@resend.dev` | "From" address for OTP emails. The default is Resend's own shared testing address and works out of the box with no setup; use your own address only once you've verified a domain in Resend |
 
-### Setting the mail env vars (Windows PowerShell)
+### Setting up email (Resend)
+
+Email is sent over Resend's HTTPS API rather than SMTP — SMTP ports are blocked outbound on Render's free tier (and most free hosts), but plain HTTPS always works.
+
+1. Sign up at [resend.com](https://resend.com) (free tier: 3,000 emails/month, no credit card).
+2. Create an API key (Dashboard → API Keys) and set it as `RESEND_API_KEY`.
+3. Leave `MAIL_FROM` unset — the default `onboarding@resend.dev` works immediately with no domain setup, and can send to any recipient on Resend's free tier.
 
 ```powershell
-$env:MAIL_USERNAME="yourname@gmail.com"
-$env:MAIL_PASSWORD="16characterapppassword"
+$env:RESEND_API_KEY="re_xxxxxxxxxxxx"
 .\mvnw.cmd spring-boot:run
 ```
 
-If these aren't set, the server still starts fine:
+If `RESEND_API_KEY` isn't set, the server still starts fine:
 - Visits without a visitor email still work exactly as before (OTP returned immediately, no verification step).
 - Visits **with** a visitor email still get staged as `awaiting_verification`, but since no email actually goes out, check `data/pavilion.db`'s `visits` table (or the Java console logs) for the `otp_code` to complete the confirm step manually.
 - Signup OTPs behave the same way — check the `pending_signups` table for the code if mail isn't configured.

@@ -4,33 +4,39 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.SimpleMailMessage;
-import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
+import java.util.List;
+import java.util.Map;
+
+// Sends over Resend's HTTPS API rather than raw SMTP — many free hosting
+// tiers (Render included) block outbound SMTP ports to prevent spam abuse,
+// but plain HTTPS always goes through.
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
+    private static final String RESEND_URL = "https://api.resend.com/emails";
 
-    private final JavaMailSender mailSender;
+    @Value("${resend.api-key:}")
+    private String apiKey;
 
-    @Value("${spring.mail.username:}")
+    @Value("${resend.from:onboarding@resend.dev}")
     private String fromAddress;
 
-    public EmailService(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
-    }
+    private final RestClient restClient = RestClient.create();
 
     @PostConstruct
     void init() {
-        if (fromAddress == null || fromAddress.isBlank()) {
-            log.warn("MAIL_USERNAME is not set — visitor OTP emails will not be sent until it's configured.");
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("RESEND_API_KEY is not set — OTP emails will not be sent until it's configured.");
         }
     }
 
     public boolean isConfigured() {
-        return fromAddress != null && !fromAddress.isBlank();
+        return apiKey != null && !apiKey.isBlank();
     }
 
     /** Best-effort send: never throws, so a mail outage can't block visit creation. */
@@ -66,12 +72,18 @@ public class EmailService {
             return;
         }
         try {
-            SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromAddress);
-            message.setTo(toAddress);
-            message.setSubject(subject);
-            message.setText(body);
-            mailSender.send(message);
+            Map<String, Object> payload = Map.of(
+                    "from", fromAddress,
+                    "to", List.of(toAddress),
+                    "subject", subject,
+                    "text", body);
+            restClient.post()
+                    .uri(RESEND_URL)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(payload)
+                    .retrieve()
+                    .toBodilessEntity();
         } catch (Exception e) {
             log.error("Failed to send email to {}", toAddress, e);
         }
