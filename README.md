@@ -78,23 +78,24 @@ src/main/java/com/pavilion/api/
 | `DATABASE_PATH` | `./data/pavilion.db` | SQLite file location |
 | `ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin allowed to send credentialed requests |
 | `RECAPTCHA_SECRET_KEY` | unset (signup/login fail until set) | Google reCAPTCHA v2 server-side secret key |
-| `SENDGRID_API_KEY` | unset (OTP emails are skipped until set) | API key from [sendgrid.com](https://sendgrid.com) used to send OTP emails |
-| `MAIL_FROM` | unset | "From" address for OTP emails — must be a **Single Sender** you've verified with SendGrid (see below). No default; both this and `SENDGRID_API_KEY` must be set for email to send at all |
+| `MAILERSEND_API_KEY` | unset (OTP emails are skipped until set) | API key from [mailersend.com](https://mailersend.com) used to send OTP emails |
+| `MAIL_FROM` | unset | "From" address for OTP emails — must be an address on your MailerSend trial/verified domain (see below). No default; both this and `MAILERSEND_API_KEY` must be set for email to send at all |
 
-### Setting up email (SendGrid)
+### Setting up email (MailerSend)
 
-Email is sent over SendGrid's HTTPS API rather than SMTP — SMTP ports are blocked outbound on Render's free tier (and most free hosts), but plain HTTPS always works. SendGrid only requires verifying you own the "from" address (click a confirmation link — no domain or DNS needed) and then lets you send to **any** recipient, unlike some providers that restrict delivery to your own inbox until a domain is verified.
+Email is sent over MailerSend's HTTPS API rather than SMTP — SMTP ports are blocked outbound on Render's free tier (and most free hosts), but plain HTTPS always works.
 
-1. Sign up at [sendgrid.com](https://sendgrid.com) (free tier: 100 emails/day, no credit card).
-2. Go to **Settings → Sender Authentication → Verify a Single Sender**, enter the email address you want to send from (e.g. your own Gmail), and click the confirmation link SendGrid emails you.
-3. Create an API key (**Settings → API Keys**) and set it as `SENDGRID_API_KEY`.
-4. Set `MAIL_FROM` to the exact address you verified in step 2.
+1. Sign up at [mailersend.com](https://mailersend.com) (no phone verification required, unlike some competitors).
+2. In the dashboard, find your **trial domain** (something like `test-xxxxxx.mlsender.net`) under **Domains**. Set `MAIL_FROM` to an address on it, e.g. `MS_XXXXXX@test-xxxxxx.mlsender.net` (the dashboard shows the exact address to use).
+3. Create an API token (**Integrations → API tokens**) and set it as `MAILERSEND_API_KEY`.
 
 ```powershell
-$env:SENDGRID_API_KEY="SG.xxxxxxxxxxxx"
-$env:MAIL_FROM="yourname@gmail.com"
+$env:MAILERSEND_API_KEY="mlsn.xxxxxxxxxxxx"
+$env:MAIL_FROM="MS_XXXXXX@test-xxxxxx.mlsender.net"
 .\mvnw.cmd spring-boot:run
 ```
+
+**Known limitation:** MailerSend's trial tier only allows sending to a small set of recipients you explicitly add as "trial recipients" in the dashboard (Domains → your trial domain → Recipients) — it can't email arbitrary visitors yet. Add your own email (and any test addresses you want to try) there. Sending to truly arbitrary recipients (real visitors, other residents signing up) requires verifying your own domain, which needs a domain you own.
 
 If these aren't set, the server still starts fine:
 - Visits without a visitor email still work exactly as before (OTP returned immediately, no verification step).

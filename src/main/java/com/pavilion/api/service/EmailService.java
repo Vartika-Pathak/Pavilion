@@ -11,19 +11,18 @@ import org.springframework.web.client.RestClient;
 import java.util.List;
 import java.util.Map;
 
-// Sends over SendGrid's HTTPS API rather than raw SMTP — many free hosting
+// Sends over MailerSend's HTTPS API rather than raw SMTP — many free hosting
 // tiers (Render included) block outbound SMTP ports to prevent spam abuse,
-// but plain HTTPS always goes through. SendGrid only requires verifying
-// ownership of the "from" address (no domain needed) and then allows
-// sending to any recipient, unlike sandboxed providers that restrict
-// delivery to the account owner's own inbox.
+// but plain HTTPS always goes through. On MailerSend's trial tier, sending
+// is restricted to a small set of verified recipients until a domain is
+// verified — see the README for details.
 @Service
 public class EmailService {
 
     private static final Logger log = LoggerFactory.getLogger(EmailService.class);
-    private static final String SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send";
+    private static final String MAILERSEND_URL = "https://api.mailersend.com/v1/email";
 
-    @Value("${sendgrid.api-key:}")
+    @Value("${mailersend.api-key:}")
     private String apiKey;
 
     @Value("${mail.from:}")
@@ -34,7 +33,7 @@ public class EmailService {
     @PostConstruct
     void init() {
         if (!isConfigured()) {
-            log.warn("SENDGRID_API_KEY / MAIL_FROM are not set — OTP emails will not be sent until configured.");
+            log.warn("MAILERSEND_API_KEY / MAIL_FROM are not set — OTP emails will not be sent until configured.");
         }
     }
 
@@ -76,12 +75,12 @@ public class EmailService {
         }
         try {
             Map<String, Object> payload = Map.of(
-                    "personalizations", List.of(Map.of("to", List.of(Map.of("email", toAddress)))),
                     "from", Map.of("email", fromAddress),
+                    "to", List.of(Map.of("email", toAddress)),
                     "subject", subject,
-                    "content", List.of(Map.of("type", "text/plain", "value", body)));
+                    "text", body);
             restClient.post()
-                    .uri(SENDGRID_URL)
+                    .uri(MAILERSEND_URL)
                     .header("Authorization", "Bearer " + apiKey)
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(payload)
