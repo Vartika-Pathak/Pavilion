@@ -6,8 +6,9 @@ Currently implemented:
 - **signup / login / logout / session** (`/api/auth/*`), protected by Google reCAPTCHA v2. Signup is two-step here: `POST /signup` stages the account and emails a 6-digit code; the account isn't actually created until `POST /signup/verify` is called with the correct code. (Login stays single-step.)
 - **Entry / visitor OTP** (`/api/visits/*`) — a resident creates a visit (guest, cab/delivery, or household help). If a visitor email is given, the visit starts as `awaiting_verification`: an OTP is emailed to the visitor, and the resident must confirm it via `POST /visits/{id}/confirm` before the visit becomes `pending` and usable at the gate — that's what proves the resident is actually in touch with a real visitor at that address. Without an email, the visit goes straight to `pending` (old behavior, OTP shown immediately). A guard or admin looks the visit up by OTP at the gate and approves or denies it.
 - **Emergency / Alerts** (`/api/emergency-alerts/*`) — matches the Node API exactly, no frontend changes needed. A resident raises a one-tap alert (idempotent — raising twice while one's already active just returns the existing one); every other resident, the guard, and admin can see it in the active-alerts list; the reporting resident, a guard, or an admin can resolve it.
+- **Chat assistant** (`/api/chat/message`, Java only) — a floating widget (every page, once signed in) that answers resident questions about using the app, via Google Gemini's free-tier API. Scoped with a system instruction to stick to app-usage questions and decline anything else.
 
-Because the signup/entry OTP flows don't exist on the Node backend, the shared frontend's `signup.tsx` and `entry.tsx` branch on the *shape* of the response rather than which backend is active — Node's plain, immediate responses take the old path unchanged; this backend's staged responses trigger the new OTP-entry screens. Those two endpoints are called with a small hand-written `apiPost` helper (`src/lib/api-fetch.ts` in the frontend) instead of the generated OpenAPI client, since they aren't part of the shared Node/Java API contract. Emergency/Alerts, by contrast, has no Java-only fields or flow differences, so it works through the existing generated hooks with zero frontend changes.
+Because the signup/entry OTP flows and the chat assistant don't exist on the Node backend, the shared frontend's `signup.tsx`, `entry.tsx`, and the new `chat-widget.tsx` branch on the *shape* of the response (or just fail gracefully) rather than which backend is active — Node's plain, immediate responses take the old path unchanged; this backend's staged responses trigger the new OTP-entry screens, and a failed chat request just shows an inline "assistant unavailable" message. These endpoints are called with a small hand-written `apiPost` helper (`src/lib/api-fetch.ts` in the frontend) instead of the generated OpenAPI client, since they aren't part of the shared Node/Java API contract. Emergency/Alerts, by contrast, has no Java-only fields or flow differences, so it works through the existing generated hooks with zero frontend changes.
 
 More features (Maintenance, Complain, Amenities+Stripe) are being ported over next, one at a time.
 
@@ -47,7 +48,7 @@ This repo includes a `Dockerfile` that builds and runs the API — Render (or an
 1. Sign up at [render.com](https://render.com) (no credit card needed for the free tier) and connect your GitHub account.
 2. **New → Web Service** → pick this repo (`Pavilion`) → Render should auto-detect the `Dockerfile`. If it asks for a runtime, choose **Docker**.
 3. Instance type: **Free**.
-4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `SENDGRID_API_KEY`, `MAIL_FROM`. Leave `PORT` alone — Render sets it automatically.
+4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `MAILERSEND_API_KEY`, `MAIL_FROM`, `GEMINI_API_KEY`. Leave `PORT` alone — Render sets it automatically.
 5. Deploy. Render gives you a URL like `https://pavilion-api-xxxx.onrender.com` — that's your live backend.
 6. Once the frontend is deployed too (see its own repo), come back and set `ALLOWED_ORIGIN` to the frontend's URL, and add that same URL to the allowed domains list in the [Google reCAPTCHA admin console](https://www.google.com/recaptcha/admin).
 
@@ -80,6 +81,7 @@ src/main/java/com/pavilion/api/
 | `ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin allowed to send credentialed requests |
 | `RECAPTCHA_SECRET_KEY` | unset (signup/login fail until set) | Google reCAPTCHA v2 server-side secret key |
 | `MAILERSEND_API_KEY` | unset (OTP emails are skipped until set) | API key from [mailersend.com](https://mailersend.com) used to send OTP emails |
+| `GEMINI_API_KEY` | unset (chat assistant returns 503 until set) | API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey), free tier, powers the chat widget |
 | `MAIL_FROM` | unset | "From" address for OTP emails — must be an address on your MailerSend trial/verified domain (see below). No default; both this and `MAILERSEND_API_KEY` must be set for email to send at all |
 
 ### Setting up email (MailerSend)
@@ -102,3 +104,15 @@ If these aren't set, the server still starts fine:
 - Visits without a visitor email still work exactly as before (OTP returned immediately, no verification step).
 - Visits **with** a visitor email still get staged as `awaiting_verification`, but since no email actually goes out, check `data/pavilion.db`'s `visits` table (or the Java console logs) for the `otp_code` to complete the confirm step manually.
 - Signup OTPs behave the same way — check the `pending_signups` table for the code if mail isn't configured.
+
+### Setting up the chat assistant (Gemini)
+
+1. Go to [aistudio.google.com/apikey](https://aistudio.google.com/apikey), sign in with a Google account, and create an API key — free, no credit card required.
+2. Set it as `GEMINI_API_KEY`.
+
+```powershell
+$env:GEMINI_API_KEY="your-key-here"
+.\mvnw.cmd spring-boot:run
+```
+
+If unset, the chat widget still renders but shows "The assistant isn't available right now" when a message is sent — nothing else on the site is affected.
