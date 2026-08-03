@@ -1,6 +1,9 @@
 package com.pavilion.api.service;
 
+import com.pavilion.api.entity.ChatMessage;
+import com.pavilion.api.entity.User;
 import com.pavilion.api.exception.ApiException;
+import com.pavilion.api.repository.ChatMessageRepository;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,17 +13,28 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
+import java.util.ArrayList;
 import java.util.List;
 
-// Answers resident questions about using the Pavilion app via Google Gemini's
+// Answers questions about using the Pavilion app via Google Gemini's
 // free-tier API (generativelanguage.googleapis.com). Scoped with a system
 // instruction to stay focused on the app itself rather than general chat.
+// Conversation history is persisted per session so replies can reference
+// earlier turns, instead of treating every message as a one-off.
 @Service
 public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
     private static final String GEMINI_URL =
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent";
+
+    private static final List<String> LOGGED_OUT_SUGGESTIONS =
+            List.of("What is Pavilion?", "How do I sign up?", "How do I log in?");
+
+    private static final List<String> LOGGED_IN_SUGGESTIONS = List.of(
+            "How do I log a visitor and get them an entry OTP?",
+            "How do I raise an emergency alert?",
+            "What can I do from the Dashboard?");
 
     private static final String SYSTEM_INSTRUCTION = """
             You are the help assistant embedded in Pavilion, a residential society management app. The person \
@@ -51,6 +65,11 @@ public class ChatService {
     private String apiKey;
 
     private final RestClient restClient = RestClient.create();
+    private final ChatMessageRepository chatMessageRepository;
+
+    public ChatService(ChatMessageRepository chatMessageRepository) {
+        this.chatMessageRepository = chatMessageRepository;
+    }
 
     @PostConstruct
     void init() {
@@ -63,15 +82,24 @@ public class ChatService {
         return apiKey != null && !apiKey.isBlank();
     }
 
-    public String ask(String message) {
+    public List<String> suggestionsFor(boolean signedIn) {
+        return signedIn ? LOGGED_IN_SUGGESTIONS : LOGGED_OUT_SUGGESTIONS;
+    }
+
+    public String ask(String sessionId, String message, User user) {
         if (!isConfigured()) {
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "The chat assistant isn't configured yet");
         }
 
+        List<ChatMessage> history = chatMessageRepository.findBySessionIdOrderByCreatedAtAsc(sessionId);
+
         try {
-            GenerateRequest body = new GenerateRequest(
-                    new SystemInstruction(List.of(new Part(SYSTEM_INSTRUCTION))),
-                    List.of(new ContentTurn(List.of(new Part(message)))));
+            List<ContentTurn> turns = new ArrayList<>(history.stream()
+                    .map(m -> new ContentTurn(geminiRole(m.getRole()), List.of(new Part(m.getContent()))))
+                    .toList());
+            turns.add(new ContentTurn("user", List.of(new Part(message))));
+
+            GenerateRequest body = new GenerateRequest(new SystemInstruction(List.of(new Part(SYSTEM_INSTRUCTION))), turns);
 
             GeminiResponse response = restClient.post()
                     .uri(GEMINI_URL)
@@ -85,6 +113,10 @@ public class ChatService {
             if (reply == null || reply.isBlank()) {
                 throw new ApiException(HttpStatus.BAD_GATEWAY, "The chat assistant didn't return a response");
             }
+
+            save(sessionId, user, "user", message);
+            save(sessionId, user, "assistant", reply);
+
             return reply;
         } catch (ApiException e) {
             throw e;
@@ -92,6 +124,19 @@ public class ChatService {
             log.error("Chat request failed", e);
             throw new ApiException(HttpStatus.BAD_GATEWAY, "The chat assistant is temporarily unavailable");
         }
+    }
+
+    private void save(String sessionId, User user, String role, String content) {
+        ChatMessage entry = new ChatMessage();
+        entry.setSessionId(sessionId);
+        entry.setUser(user);
+        entry.setRole(role);
+        entry.setContent(content);
+        chatMessageRepository.save(entry);
+    }
+
+    private static String geminiRole(String storedRole) {
+        return "assistant".equals(storedRole) ? "model" : "user";
     }
 
     private static String extractText(GeminiResponse response) {
@@ -111,7 +156,7 @@ public class ChatService {
     private record SystemInstruction(List<Part> parts) {
     }
 
-    private record ContentTurn(List<Part> parts) {
+    private record ContentTurn(String role, List<Part> parts) {
     }
 
     private record Part(String text) {
