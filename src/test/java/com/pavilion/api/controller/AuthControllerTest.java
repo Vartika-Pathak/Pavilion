@@ -63,6 +63,60 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void signupRejectsANameContainingDigitsOrSymbols() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex99","email":"digits-in-name@test.local","flatNumber":"A-1",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("name: Name can only contain letters and spaces"));
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex@!","email":"symbols-in-name@test.local","flatNumber":"A-1",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isBadRequest());
+
+        assertThat(pendingSignupRepository.findByEmail("digits-in-name@test.local")).isEmpty();
+    }
+
+    @Test
+    void signupRejectsAFlatNumberWithDisallowedCharacters() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex","email":"bad-flat@test.local","flatNumber":"@@@###",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("Flat number")));
+    }
+
+    @Test
+    void signupAcceptsAFlatNumberWithCommonSeparators() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex","email":"ok-flat@test.local","flatNumber":"A-101, Wing B",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void signupRejectsAPasswordLongerThanBcryptsSeventyTwoByteLimit() throws Exception {
+        String tooLong = "a".repeat(80);
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex","email":"long-password@test.local","flatNumber":"A-1",
+                                 "password":"%s","captchaToken":"tok"}""".formatted(tooLong)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("password: Password must be between 8 and 72 characters"));
+    }
+
+    @Test
     void verifyingTheCorrectOtpCreatesTheUserAndSetsASessionCookie() throws Exception {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")

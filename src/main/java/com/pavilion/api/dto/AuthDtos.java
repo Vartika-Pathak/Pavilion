@@ -5,28 +5,40 @@ import com.pavilion.api.entity.User;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
 public class AuthDtos {
 
     public record SignupRequest(
-            @NotBlank String name,
-            @NotBlank @Email String email,
-            @NotBlank String flatNumber,
-            @NotBlank @Size(min = 8) String password,
+            @NotBlank(message = "Name is required")
+            @Pattern(regexp = "^[A-Za-z ]{2,100}$", message = "Name can only contain letters and spaces")
+            String name,
+            @NotBlank @Email(message = "Enter a valid email address") String email,
+            @NotBlank(message = "Flat number is required")
+            @Pattern(regexp = "^[A-Za-z0-9 ,\\-/]{1,20}$",
+                    message = "Flat number can only contain letters, numbers, spaces, and , - /")
+            String flatNumber,
+            @NotBlank(message = "Password is required")
+            // Capped at 72: BCrypt (the hash this ends up in) silently ignores anything past 72
+            // bytes, so a longer password would just be truncated rather than actually used.
+            @Size(min = 8, max = 72, message = "Password must be between 8 and 72 characters")
+            String password,
             @NotBlank String captchaToken) {
     }
 
     public record LoginRequest(
-            @NotBlank @Email String email,
+            @NotBlank @Email(message = "Enter a valid email address") String email,
             @NotBlank String password,
             @NotBlank String captchaToken) {
     }
 
     public record VerifySignupOtpRequest(
             @NotNull Long pendingSignupId,
-            @NotBlank String otpCode) {
+            @NotBlank
+            @Pattern(regexp = "^\\d{6}$", message = "Enter the 6-digit code")
+            String otpCode) {
     }
 
     /** Returned after /signup — the account isn't created yet until the emailed OTP is verified. */

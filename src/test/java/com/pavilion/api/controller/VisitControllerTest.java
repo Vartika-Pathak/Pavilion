@@ -40,7 +40,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234567"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("pending"))
                 .andExpect(jsonPath("$.otpCode").isNotEmpty());
@@ -48,6 +48,65 @@ class VisitControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/visits/mine").cookie(sessionCookie(resident)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].visitorName").value("Alex"));
+    }
+
+    @Test
+    void visitorNameRejectsDigitsAndSymbols() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex99"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("visitorName: Visitor name can only contain letters and spaces"));
+    }
+
+    @Test
+    void visitorPhoneMustBeExactlyTenDigitsWhenGiven() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"12345"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("visitorPhone: Mobile number must be exactly 10 digits"));
+
+        mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"55512345a"}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void visitorPhoneStaysOptional() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex"}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.visitorPhone").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    @Test
+    void lookupRejectsAMalformedOtpBeforeEvenCheckingRole() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/visits/lookup")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"otpCode":"abc"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("otpCode: Enter the 6-digit code"));
     }
 
     @Test
@@ -125,7 +184,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234567"}"""))
                 .andReturn().getResponse().getContentAsString();
         String otpCode = JsonPath.read(created, "$.otpCode");
         Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
