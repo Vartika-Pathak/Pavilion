@@ -38,7 +38,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"alex@test.local","flatNumber":"A-1",
+                                {"name":"Alex","email":"alex@test.local","flatNumber":"A1",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("alex@test.local"))
@@ -55,7 +55,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"bad-captcha@test.local","flatNumber":"A-1",
+                                {"name":"Alex","email":"bad-captcha@test.local","flatNumber":"A1",
                                  "password":"password123","captchaToken":"bad"}"""))
                 .andExpect(status().isBadRequest());
 
@@ -67,7 +67,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex99","email":"digits-in-name@test.local","flatNumber":"A-1",
+                                {"name":"Alex99","email":"digits-in-name@test.local","flatNumber":"A1",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("name: Name can only contain letters and spaces"));
@@ -75,7 +75,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex@!","email":"symbols-in-name@test.local","flatNumber":"A-1",
+                                {"name":"Alex@!","email":"symbols-in-name@test.local","flatNumber":"A1",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isBadRequest());
 
@@ -94,13 +94,31 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void signupAcceptsAFlatNumberWithCommonSeparators() throws Exception {
+    void signupAcceptsAFlatNumberThatsALetterFollowedByUpToThreeDigits() throws Exception {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"ok-flat@test.local","flatNumber":"A-101, Wing B",
+                                {"name":"Alex","email":"ok-flat@test.local","flatNumber":"A101",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void signupRejectsAFlatNumberWithMoreThanThreeDigitsOrNoLetter() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex","email":"too-many-digits@test.local","flatNumber":"A1234",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("flatNumber: Flat number must be a letter followed by 1-3 digits, e.g. A101"));
+
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex","email":"no-letter@test.local","flatNumber":"101",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -110,7 +128,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"long-password@test.local","flatNumber":"A-1",
+                                {"name":"Alex","email":"long-password@test.local","flatNumber":"A1",
                                  "password":"%s","captchaToken":"tok"}""".formatted(tooLong)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("password: Password must be between 8 and 72 characters"));
@@ -121,7 +139,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Sam","email":"sam@test.local","flatNumber":"B-2",
+                                {"name":"Sam","email":"sam@test.local","flatNumber":"B2",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk());
 
@@ -143,7 +161,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Kim","email":"kim@test.local","flatNumber":"C-3",
+                                {"name":"Kim","email":"kim@test.local","flatNumber":"C3",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk());
 

@@ -17,8 +17,7 @@ public class AuthDtos {
             String name,
             @NotBlank @Email(message = "Enter a valid email address") String email,
             @NotBlank(message = "Flat number is required")
-            @Pattern(regexp = "^[A-Za-z0-9 ,\\-/]{1,20}$",
-                    message = "Flat number can only contain letters, numbers, spaces, and , - /")
+            @Pattern(regexp = "^[A-Za-z][0-9]{1,3}$", message = "Flat number must be a letter followed by 1-3 digits, e.g. A101")
             String flatNumber,
             @NotBlank(message = "Password is required")
             // Capped at 72: BCrypt (the hash this ends up in) silently ignores anything past 72
