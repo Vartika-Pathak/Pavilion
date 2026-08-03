@@ -26,7 +26,27 @@ $env:JWT_SECRET="pick-any-long-random-string-here"
 
 (Mac/Linux: `export JWT_SECRET=...` then `./mvnw spring-boot:run`)
 
-The API starts on **port 8081** by default (override with `PORT`). A SQLite file is created automatically at `data/pavilion.db` — open it in DB Browser for SQLite to inspect data, same as with the Node version.
+The API starts on **port 8081** by default (override with `PORT`). By default, a SQLite file is created automatically at `data/pavilion.db` — open it in DB Browser for SQLite to inspect data. To use MySQL instead, see the next section.
+
+## Using MySQL locally (XAMPP)
+
+By default this runs on SQLite with zero setup. If you'd rather use MySQL (e.g. via XAMPP, so you can browse data in phpMyAdmin), set these env vars before starting — they override the SQLite defaults, and nothing else in the app changes:
+
+```powershell
+$env:JWT_SECRET="pick-any-long-random-string-here"
+$env:DB_URL="jdbc:mysql://localhost:3306/pavilion?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true"
+$env:DB_DRIVER="com.mysql.cj.jdbc.Driver"
+$env:DB_USERNAME="root"
+$env:DB_PASSWORD=""
+$env:DB_DIALECT="org.hibernate.dialect.MySQLDialect"
+.\mvnw.cmd spring-boot:run
+```
+
+`root` / empty password matches XAMPP's default MySQL setup — adjust if you've changed it. `createDatabaseIfNotExist=true` means you don't need to create the `pavilion` database yourself in phpMyAdmin first; it's created automatically, and tables are created/updated on every startup same as with SQLite (`spring.jpa.hibernate.ddl-auto=update`).
+
+Just make sure XAMPP's MySQL service is actually running (via the XAMPP Control Panel) before starting the API — if it isn't, startup fails immediately with a clear "Access denied" or "Communications link failure" error rather than silently falling back to SQLite.
+
+Switching back to SQLite later is just deleting/unsetting those five env vars, nothing else to undo. This is a local-only choice — the deployed Render backend keeps using SQLite regardless, since XAMPP only runs on your own machine.
 
 ## Running the existing React frontend against this backend
 
@@ -77,7 +97,11 @@ src/main/java/com/pavilion/api/
 |---|---|---|
 | `PORT` | `8081` | Port the API listens on |
 | `JWT_SECRET` | insecure dev default (warns on startup) | Signs session cookies |
-| `DATABASE_PATH` | `./data/pavilion.db` | SQLite file location |
+| `DATABASE_PATH` | `./data/pavilion.db` | SQLite file location (ignored if `DB_URL` is set) |
+| `DB_URL` | unset (falls back to the SQLite URL above) | Full JDBC URL — set to switch databases entirely, e.g. to MySQL (see "Using MySQL locally") |
+| `DB_DRIVER` | `org.sqlite.JDBC` | JDBC driver class — set to `com.mysql.cj.jdbc.Driver` alongside `DB_URL` for MySQL |
+| `DB_DIALECT` | `org.hibernate.community.dialect.SQLiteDialect` | Hibernate dialect — set to `org.hibernate.dialect.MySQLDialect` for MySQL |
+| `DB_USERNAME` / `DB_PASSWORD` | unset | Database credentials — SQLite ignores these; MySQL needs them |
 | `ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin allowed to send credentialed requests |
 | `RECAPTCHA_SECRET_KEY` | unset (signup/login fail until set) | Google reCAPTCHA v2 server-side secret key |
 | `MAILERSEND_API_KEY` | unset (OTP emails are skipped until set) | API key from [mailersend.com](https://mailersend.com) used to send OTP emails |
