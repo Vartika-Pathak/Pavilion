@@ -10,11 +10,11 @@ import com.pavilion.api.entity.User;
 import com.pavilion.api.entity.Visit;
 import com.pavilion.api.exception.ApiException;
 import com.pavilion.api.repository.VisitRepository;
-import com.pavilion.api.security.CurrentUserResolver;
 import com.pavilion.api.service.EmailService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.SecureRandom;
@@ -22,6 +22,9 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 
+// Every endpoint here requires authentication (see SecurityConfig's default
+// anyRequest().authenticated()) — the injected User is never null. /lookup
+// and /decide are further gated to guards/admins via @PreAuthorize.
 @RestController
 @RequestMapping("/api/visits")
 public class VisitController {
@@ -29,22 +32,15 @@ public class VisitController {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final VisitRepository visitRepository;
-    private final CurrentUserResolver currentUserResolver;
     private final EmailService emailService;
 
-    public VisitController(
-            VisitRepository visitRepository,
-            CurrentUserResolver currentUserResolver,
-            EmailService emailService) {
+    public VisitController(VisitRepository visitRepository, EmailService emailService) {
         this.visitRepository = visitRepository;
-        this.currentUserResolver = currentUserResolver;
         this.emailService = emailService;
     }
 
     @PostMapping
-    public VisitResponse create(@Valid @RequestBody CreateVisitRequest body, HttpServletRequest request) {
-        User resident = requireUser(request);
-
+    public VisitResponse create(@Valid @RequestBody CreateVisitRequest body, @AuthenticationPrincipal User resident) {
         boolean hasEmail = body.visitorEmail() != null && !body.visitorEmail().isBlank();
         String otpCode = generateOtpCode();
 
@@ -71,9 +67,7 @@ public class VisitController {
 
     @PostMapping("/{id}/confirm")
     public VisitResponse confirm(
-            @PathVariable Long id, @Valid @RequestBody ConfirmVisitRequest body, HttpServletRequest request) {
-        User resident = requireUser(request);
-
+            @PathVariable Long id, @Valid @RequestBody ConfirmVisitRequest body, @AuthenticationPrincipal User resident) {
         Visit visit = visitRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Visit not found"));
 
@@ -97,17 +91,15 @@ public class VisitController {
     }
 
     @GetMapping("/mine")
-    public List<VisitResponse> mine(HttpServletRequest request) {
-        User resident = requireUser(request);
+    public List<VisitResponse> mine(@AuthenticationPrincipal User resident) {
         return visitRepository.findByResidentOrderByCreatedAtDesc(resident).stream()
                 .map(VisitResponse::from)
                 .toList();
     }
 
+    @PreAuthorize("hasRole('GUARD') or hasRole('ADMIN')")
     @PostMapping("/lookup")
-    public VisitLookupResult lookup(@Valid @RequestBody LookupVisitRequest body, HttpServletRequest request) {
-        requireGuardOrAdmin(request);
-
+    public VisitLookupResult lookup(@Valid @RequestBody LookupVisitRequest body) {
         Visit visit = visitRepository.findByOtpCodeAndStatus(body.otpCode(), "pending")
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "No pending visit with that OTP"));
 
@@ -118,11 +110,10 @@ public class VisitController {
         return VisitLookupResult.from(visit, visit.getResident());
     }
 
+    @PreAuthorize("hasRole('GUARD') or hasRole('ADMIN')")
     @PostMapping("/{id}/decide")
     public VisitResponse decide(
-            @PathVariable Long id, @Valid @RequestBody DecideVisitRequest body, HttpServletRequest request) {
-        User actor = requireGuardOrAdmin(request);
-
+            @PathVariable Long id, @Valid @RequestBody DecideVisitRequest body, @AuthenticationPrincipal User actor) {
         Visit visit = visitRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Visit not found"));
 
@@ -140,18 +131,5 @@ public class VisitController {
 
     private static String generateOtpCode() {
         return String.valueOf(100000 + RANDOM.nextInt(900000));
-    }
-
-    private User requireUser(HttpServletRequest request) {
-        return currentUserResolver.resolve(request)
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Not signed in"));
-    }
-
-    private User requireGuardOrAdmin(HttpServletRequest request) {
-        User user = requireUser(request);
-        if (!"guard".equals(user.getRole()) && !"admin".equals(user.getRole())) {
-            throw new ApiException(HttpStatus.FORBIDDEN, "Only guards or admins can do this");
-        }
-        return user;
     }
 }

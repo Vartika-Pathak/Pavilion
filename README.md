@@ -85,11 +85,32 @@ src/main/java/com/pavilion/api/
   repository/     Spring Data repositories
   dto/            Request/response records (the API contract)
   controller/     REST endpoints
-  security/       JWT signing/verification, session cookie resolution, reCAPTCHA verification
-  service/        Email sending (visitor OTP)
-  config/         CORS, password encoder
+  security/       JWT signing/verification, the auth filter, reCAPTCHA verification
+  service/        Email sending (visitor OTP), the chat assistant, rate limiting
+  config/         Spring Security, CORS, password encoder, OpenAPI/Swagger
   exception/      Consistent JSON error responses
 ```
+
+## Security, health checks, and API docs
+
+Authentication is real Spring Security, not hand-rolled per-controller checks: `JwtAuthenticationFilter`
+reads the `session` cookie once per request and, if it's a valid token for a real user, populates
+Spring Security's context with that `User` as the principal. Controllers then just declare what they
+need — `@AuthenticationPrincipal User user` to require *some* signed-in user (the default for every
+endpoint not listed below), or `@PreAuthorize("hasRole('GUARD') or hasRole('ADMIN')")` to also require
+a specific role, as the visitor-lookup and approve/deny endpoints do. A handful of endpoints are
+explicitly public: `/api/auth/signup`, `/signup/verify`, `/login`, `/logout`, `/api/healthz`, and the
+chat endpoints (so the chat widget works for signed-out visitors too). Anything else returns a JSON
+`401`/`403` — see `SecurityConfig`.
+
+Two small operational extras came along with that:
+
+- **Health check**: `GET /actuator/health` → `{"status":"UP"}`. Only `health` and `info` are exposed
+  (`management.endpoints.web.exposure.include` in `application.properties`) — nothing that could leak
+  config, like `/actuator/env` or `/actuator/beans`, is reachable.
+- **API docs**: `GET /swagger-ui.html` renders an interactive, always-up-to-date list of every endpoint,
+  generated from the actual controllers/DTOs (springdoc-openapi). Useful for exploring the API without
+  reading the controller source. The raw OpenAPI JSON is at `/v3/api-docs`.
 
 ## Environment variables
 

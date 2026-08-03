@@ -10,16 +10,16 @@ import com.pavilion.api.entity.User;
 import com.pavilion.api.exception.ApiException;
 import com.pavilion.api.repository.PendingSignupRepository;
 import com.pavilion.api.repository.UserRepository;
-import com.pavilion.api.security.CurrentUserResolver;
+import com.pavilion.api.security.JwtAuthenticationFilter;
 import com.pavilion.api.security.JwtService;
 import com.pavilion.api.security.RecaptchaService;
 import com.pavilion.api.service.EmailService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,7 +37,6 @@ public class AuthController {
     private final PendingSignupRepository pendingSignupRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
-    private final CurrentUserResolver currentUserResolver;
     private final RecaptchaService recaptchaService;
     private final EmailService emailService;
 
@@ -46,14 +45,12 @@ public class AuthController {
             PendingSignupRepository pendingSignupRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
-            CurrentUserResolver currentUserResolver,
             RecaptchaService recaptchaService,
             EmailService emailService) {
         this.userRepository = userRepository;
         this.pendingSignupRepository = pendingSignupRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
-        this.currentUserResolver = currentUserResolver;
         this.recaptchaService = recaptchaService;
         this.emailService = emailService;
     }
@@ -136,7 +133,7 @@ public class AuthController {
 
     @PostMapping("/logout")
     public ResponseEntity<Void> logout() {
-        ResponseCookie cleared = ResponseCookie.from(CurrentUserResolver.SESSION_COOKIE, "")
+        ResponseCookie cleared = ResponseCookie.from(JwtAuthenticationFilter.SESSION_COOKIE, "")
                 .httpOnly(true)
                 .sameSite("Lax")
                 .path("/")
@@ -145,10 +142,10 @@ public class AuthController {
         return ResponseEntity.noContent().header(HttpHeaders.SET_COOKIE, cleared.toString()).build();
     }
 
+    // Never null here — this endpoint requires authentication (see SecurityConfig),
+    // so Spring Security already rejected the request with 401 if it weren't.
     @GetMapping("/me")
-    public ResponseEntity<AuthUserResponse> me(HttpServletRequest request) {
-        User user = currentUserResolver.resolve(request)
-                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Not signed in"));
+    public ResponseEntity<AuthUserResponse> me(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(AuthUserResponse.from(user));
     }
 
@@ -162,7 +159,7 @@ public class AuthController {
     }
 
     private ResponseCookie sessionCookie(Long userId) {
-        return ResponseCookie.from(CurrentUserResolver.SESSION_COOKIE, jwtService.signSessionToken(userId))
+        return ResponseCookie.from(JwtAuthenticationFilter.SESSION_COOKIE, jwtService.signSessionToken(userId))
                 .httpOnly(true)
                 .sameSite("Lax")
                 .path("/")
