@@ -54,7 +54,11 @@ public class JwtService {
         try {
             Claims claims = Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
             return Optional.of(Long.parseLong(claims.getSubject()));
-        } catch (JwtException | NumberFormatException e) {
+        } catch (JwtException | IllegalArgumentException e) {
+            // IllegalArgumentException covers jjwt's own input-validation rejections (e.g. an
+            // empty token), which aren't JwtExceptions but are just as much "not a valid
+            // session" as an expired or tampered one — NumberFormatException from a corrupt
+            // subject claim is an IllegalArgumentException too, so this also subsumes that case.
             return Optional.empty();
         }
     }

@@ -42,7 +42,9 @@ $env:DB_DIALECT="org.hibernate.dialect.MySQLDialect"
 .\mvnw.cmd spring-boot:run
 ```
 
-`root` / empty password matches XAMPP's default MySQL setup — adjust if you've changed it. `createDatabaseIfNotExist=true` means you don't need to create the `pavilion` database yourself in phpMyAdmin first; it's created automatically, and tables are created/updated on every startup same as with SQLite (`spring.jpa.hibernate.ddl-auto=update`).
+`root` / empty password matches XAMPP's default MySQL setup — adjust if you've changed it. `createDatabaseIfNotExist=true` means you don't need to create the `pavilion` database yourself in phpMyAdmin first; it's created automatically, and Flyway creates the tables in it on first startup (see "Database migrations" below).
+
+If you already have a local `pavilion` database from before migrations existed (tables created by the old `ddl-auto=update` behavior), Flyway adopts it automatically the first time you start with this version — no manual steps, your existing data stays put. See "Database migrations" for what's actually happening there.
 
 Just make sure XAMPP's MySQL service is actually running (via the XAMPP Control Panel) before starting the API — if it isn't, startup fails immediately with a clear "Access denied" or "Communications link failure" error rather than silently falling back to SQLite.
 
@@ -89,7 +91,55 @@ src/main/java/com/pavilion/api/
   service/        Email sending (visitor OTP), the chat assistant, rate limiting
   config/         Spring Security, CORS, password encoder, OpenAPI/Swagger
   exception/      Consistent JSON error responses
+src/main/resources/db/migration/
+  sqlite/         Flyway migrations for SQLite (the default)
+  mysql/          The same migrations, in MySQL's dialect (for local XAMPP use)
+src/test/java/com/pavilion/api/
+  AbstractIntegrationTest.java   shared MockMvc + test-user setup for the controller tests below
+  controller/     One test class per controller, through the real Spring Security filter chain
+  security/, service/, exception/   focused unit tests for the lower-level pieces
 ```
+
+## Database migrations
+
+Schema changes are Flyway migrations under `src/main/resources/db/migration/{sqlite,mysql}/`, not
+Hibernate auto-DDL — `spring.jpa.hibernate.ddl-auto=none`, so the app never alters your schema on
+its own. Add a new one as `V2__whatever_it_does.sql` (bump the number each time) in *both* the
+`sqlite/` and `mysql/` folders, since Flyway picks whichever one matches the database you're
+actually connected to (`spring.flyway.locations=classpath:db/migration/{vendor}`) — Hibernate's
+own entity-to-table mapping is the same either way, but the two databases need different SQL to
+create the same shape (e.g. SQLite's `INTEGER PRIMARY KEY AUTOINCREMENT` vs MySQL's
+`BIGINT AUTO_INCREMENT`).
+
+A fresh database just gets every migration applied in order on first startup. A database that
+already has these tables from before migrations existed (any local SQLite or MySQL setup that
+predates this) gets **baselined** automatically instead (`spring.flyway.baseline-on-migrate=true`,
+`baseline-version=1`) — Flyway records `V1` as already applied without re-running its
+`CREATE TABLE`s, so your existing data is untouched. This was tested against both a pre-existing
+local SQLite file and a pre-existing local MySQL database before shipping.
+
+One dialect-specific note if you're ever debugging a startup schema error: `ddl-auto` is `none`
+rather than `validate` on purpose. `hibernate-community-dialects`' `SQLiteDialect` generates
+`integer` (not `bigint`) for identity/primary-key columns — SQLite requires exactly that type for
+its rowid-alias autoincrement to work — but Hibernate's schema *validator* independently expects
+`bigint` for any `Long`-mapped column, so `validate` mode fails against a perfectly correct SQLite
+schema. `none` sidesteps that inconsistency; Flyway is the single source of truth for the schema
+either way.
+
+## Testing
+
+```powershell
+.\mvnw.cmd test
+```
+
+44 tests: full-context integration tests for every controller (`AuthControllerTest`,
+`VisitControllerTest`, `EmergencyAlertControllerTest`, `ChatControllerTest`) that go through
+`MockMvc` and the real Spring Security filter chain — the same JWT cookie auth, `@PreAuthorize`
+role checks, and JSON error responses a real request hits — against a throwaway in-memory SQLite
+database, plus focused unit tests for `JwtService`, `ChatRateLimiter`, and `GlobalExceptionHandler`
+(the last one specifically pins down the two exception-handling edge cases the Spring Security
+work above surfaced, so they can't silently regress). External calls (Gemini, reCAPTCHA) are
+mocked — nothing in the suite makes a real network call.
 
 ## Security, health checks, and API docs
 

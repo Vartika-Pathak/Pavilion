@@ -48,6 +48,16 @@
       <version>2.7.0</version>
     </dependency>
 
+    <!-- Schema migrations. Vendor-specific SQL lives under db/migration/{sqlite,mysql} — see README. -->
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-core</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.flywaydb</groupId>
+      <artifactId>flyway-mysql</artifactId>
+    </dependency>
+
     <!-- SQLite JDBC driver + Hibernate dialect (default; used unless DB_* env vars override it) -->
     <dependency>
       <groupId>org.xerial</groupId>
