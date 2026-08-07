@@ -42,7 +42,7 @@ public class AuthDtos {
             @Pattern(regexp = "^[A-Za-z ]{2,50}$", message = "Relation can only contain letters and spaces")
             String relation,
             @Min(value = 0, message = "Age must be a positive number")
-            @Max(value = 120, message = "Age must be realistic")
+            @Max(value = 100, message = "Age must be 100 or below")
             Integer age) {
     }
 

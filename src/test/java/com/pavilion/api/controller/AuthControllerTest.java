@@ -314,6 +314,20 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void signupRejectsAFamilyMemberAgeOverOneHundred() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Jordan","email":"too-old@test.local","flatNumber":"A-1",
+                                 "password":"password123","captchaToken":"tok",
+                                 "familyMembers":[{"name":"Elder Jordan","relation":"Parent","age":101}]}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value(org.hamcrest.Matchers.containsString("Age must be 100 or below")));
+
+        assertThat(pendingSignupRepository.findByEmail("too-old@test.local")).isEmpty();
+    }
+
+    @Test
     void signupWithFamilyMembersCreatesThemOnceTheOtpIsVerified() throws Exception {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
