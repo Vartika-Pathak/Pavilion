@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -143,5 +144,68 @@ class AdminControllerTest extends AbstractIntegrationTest {
                         .contentType("application/json")
                         .content("{\"action\":\"reject\"}"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void creatingAGuardRequiresAuthentication() throws Exception {
+        mockMvc.perform(post("/api/admin/guards")
+                        .contentType("application/json")
+                        .content("{\"name\":\"Sam Guard\",\"email\":\"sam@pavilion.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void residentCannotCreateAGuard() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/admin/guards")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Sam Guard\",\"email\":\"sam@pavilion.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanCreateAGuardAccount() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/admin/guards")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Sam Guard\",\"email\":\"sam@pavilion.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.email").value("sam@pavilion.com"))
+                .andExpect(jsonPath("$.role").value("guard"));
+
+        User guard = userRepository.findByEmail("sam@pavilion.com").orElseThrow();
+        assertThat(guard.getRole()).isEqualTo("guard");
+        assertThat(passwordEncoder.matches("password123", guard.getPasswordHash())).isTrue();
+    }
+
+    @Test
+    void creatingAGuardRejectsANonPavilionEmail() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/admin/guards")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Sam Guard\",\"email\":\"sam@gmail.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void creatingAGuardWithADuplicateEmailFails() throws Exception {
+        User admin = createUser("admin");
+        mockMvc.perform(post("/api/admin/guards")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Sam Guard\",\"email\":\"sam@pavilion.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/admin/guards")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Another Guard\",\"email\":\"sam@pavilion.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isConflict());
     }
 }

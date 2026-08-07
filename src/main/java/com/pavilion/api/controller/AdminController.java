@@ -1,15 +1,20 @@
 package com.pavilion.api.controller;
 
+import com.pavilion.api.dto.AdminDtos.CreateGuardRequest;
 import com.pavilion.api.dto.AdminDtos.UpdateVerificationRequestBody;
 import com.pavilion.api.dto.AdminDtos.VerificationRequestSummary;
+import com.pavilion.api.dto.AuthDtos.AuthUserResponse;
 import com.pavilion.api.entity.ResidentVerificationRequest;
 import com.pavilion.api.entity.User;
 import com.pavilion.api.exception.ApiException;
 import com.pavilion.api.repository.ResidentVerificationRequestRepository;
+import com.pavilion.api.repository.UserRepository;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -23,9 +28,37 @@ import java.util.List;
 public class AdminController {
 
     private final ResidentVerificationRequestRepository verificationRequestRepository;
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    public AdminController(ResidentVerificationRequestRepository verificationRequestRepository) {
+    public AdminController(
+            ResidentVerificationRequestRepository verificationRequestRepository,
+            UserRepository userRepository,
+            PasswordEncoder passwordEncoder) {
         this.verificationRequestRepository = verificationRequestRepository;
+        this.userRepository = userRepository;
+        this.passwordEncoder = passwordEncoder;
+    }
+
+    /**
+     * Guards don't sign up — an admin creates the account here and hands the credentials to the
+     * guard directly. flatNumber is set to a fixed placeholder since guards aren't tied to a flat.
+     */
+    @PostMapping("/guards")
+    public ResponseEntity<AuthUserResponse> createGuard(@Valid @RequestBody CreateGuardRequest body) {
+        if (userRepository.findByEmail(body.email()).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        }
+
+        User guard = new User();
+        guard.setName(body.name());
+        guard.setEmail(body.email());
+        guard.setPasswordHash(passwordEncoder.encode(body.password()));
+        guard.setFlatNumber("N/A");
+        guard.setRole("guard");
+        guard = userRepository.save(guard);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(AuthUserResponse.from(guard));
     }
 
     /** Pending requests first (oldest first within each group), so the queue reads top-to-bottom. */
