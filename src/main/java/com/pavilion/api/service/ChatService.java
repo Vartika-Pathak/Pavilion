@@ -57,8 +57,8 @@ public class ChatService {
             like "First, ... Then, ...", not a formatted list.
 
             If asked something unrelated to using this app (general knowledge, other topics), politely say you can \
-            only help with questions about the Pavilion app and suggest contacting building management for \
-            anything else.
+            only help with questions about the Pavilion app, and point them to building management at \
+            committee@pavilion.example.com or 020 7946 0958 for anything else.
             """;
 
     @Value("${gemini.api-key:}")
