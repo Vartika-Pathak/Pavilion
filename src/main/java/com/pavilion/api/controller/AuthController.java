@@ -194,7 +194,7 @@ public class AuthController {
         pendingSignupRepository.delete(pending);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .header(HttpHeaders.SET_COOKIE, sessionCookie(user.getId()).toString())
+                .header(HttpHeaders.SET_COOKIE, sessionCookie(user).toString())
                 .body(AuthUserResponse.from(user));
     }
 
@@ -228,7 +228,7 @@ public class AuthController {
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "Invalid email or password"));
 
         return ResponseEntity.ok()
-                .header(HttpHeaders.SET_COOKIE, sessionCookie(user.getId()).toString())
+                .header(HttpHeaders.SET_COOKIE, sessionCookie(user).toString())
                 .body(AuthUserResponse.from(user));
     }
 
@@ -259,8 +259,8 @@ public class AuthController {
         }
     }
 
-    private ResponseCookie sessionCookie(Long userId) {
-        return ResponseCookie.from(JwtAuthenticationFilter.SESSION_COOKIE, jwtService.signSessionToken(userId))
+    private ResponseCookie sessionCookie(User user) {
+        return ResponseCookie.from(JwtAuthenticationFilter.SESSION_COOKIE, jwtService.signSessionToken(user))
                 .httpOnly(true)
                 .sameSite("Lax")
                 .path("/")

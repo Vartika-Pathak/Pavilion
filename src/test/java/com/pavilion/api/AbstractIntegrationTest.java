@@ -47,6 +47,6 @@ public abstract class AbstractIntegrationTest {
     }
 
     protected Cookie sessionCookie(User user) {
-        return new Cookie(JwtAuthenticationFilter.SESSION_COOKIE, jwtService.signSessionToken(user.getId()));
+        return new Cookie(JwtAuthenticationFilter.SESSION_COOKIE, jwtService.signSessionToken(user));
     }
 }

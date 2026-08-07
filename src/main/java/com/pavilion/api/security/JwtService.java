@@ -1,5 +1,6 @@
 package com.pavilion.api.security;
 
+import com.pavilion.api.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
@@ -39,11 +40,20 @@ public class JwtService {
         this.key = Keys.hmacShaKeyFor(padded.getBytes(StandardCharsets.UTF_8));
     }
 
-    public String signSessionToken(Long userId) {
+    /**
+     * The name/email/flatNumber/role claims exist for the separate Node API server, which shares
+     * this JWT secret and the "session" cookie name but keeps its own disconnected user table —
+     * it has no way to look up those fields itself, so we hand them over in the token instead.
+     */
+    public String signSessionToken(User user) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + SESSION_DURATION.toMillis());
         return Jwts.builder()
-                .subject(String.valueOf(userId))
+                .subject(String.valueOf(user.getId()))
+                .claim("name", user.getName())
+                .claim("email", user.getEmail())
+                .claim("flatNumber", user.getFlatNumber())
+                .claim("role", user.getRole())
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(key)

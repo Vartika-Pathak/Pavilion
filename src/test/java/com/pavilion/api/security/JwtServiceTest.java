@@ -1,5 +1,6 @@
 package com.pavilion.api.security;
 
+import com.pavilion.api.entity.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -24,9 +25,19 @@ class JwtServiceTest {
         return service;
     }
 
+    private static User userWithId(long id) {
+        User user = new User();
+        ReflectionTestUtils.setField(user, "id", id);
+        user.setName("Test User");
+        user.setEmail("test-" + id + "@test.local");
+        user.setFlatNumber("A-101");
+        user.setRole("resident");
+        return user;
+    }
+
     @Test
     void signedTokenRoundTripsToTheSameUserId() {
-        String token = jwtService.signSessionToken(42L);
+        String token = jwtService.signSessionToken(userWithId(42L));
 
         Optional<Long> userId = jwtService.verifySessionToken(token);
 
@@ -47,7 +58,7 @@ class JwtServiceTest {
     void tokenSignedWithADifferentSecretFailsVerification() {
         JwtService otherService = newService("a-completely-different-secret-also-32-bytes");
 
-        String tokenFromOtherService = otherService.signSessionToken(1L);
+        String tokenFromOtherService = otherService.signSessionToken(userWithId(1L));
 
         assertThat(jwtService.verifySessionToken(tokenFromOtherService)).isEmpty();
     }
@@ -58,7 +69,7 @@ class JwtServiceTest {
         // on startup — it just gets a startup warning instead (see JwtService.init).
         JwtService shortSecretService = newService("short");
 
-        String token = shortSecretService.signSessionToken(7L);
+        String token = shortSecretService.signSessionToken(userWithId(7L));
 
         assertThat(shortSecretService.verifySessionToken(token)).contains(7L);
     }
