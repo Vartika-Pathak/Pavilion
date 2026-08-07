@@ -259,6 +259,21 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void submittingForAFlatThatAlreadyHasAResidentIsRejectedWithoutCreatingARequest() throws Exception {
+        User existingResident = createUser("resident");
+        existingResident.setFlatNumber("A-101");
+        userRepository.save(existingResident);
+
+        mockMvc.perform(post("/api/auth/verification-requests")
+                        .contentType("application/json")
+                        .content("{\"name\":\"Someone New\",\"flatNumber\":\"A-101\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("flat_taken"));
+
+        assertThat(verificationRequestRepository.findAllByOrderByStatusAscCreatedAtAsc()).isEmpty();
+    }
+
+    @Test
     void resubmittingTheSameFlatAndNameReturnsTheExistingRequestInstead() throws Exception {
         mockMvc.perform(post("/api/auth/verification-requests")
                         .contentType("application/json")

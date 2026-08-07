@@ -78,11 +78,18 @@ public class AuthController {
      * A first-time resident's entry point into signup — submits a name + flat number for an admin
      * to review (see AdminController). Idempotent: re-submitting the same flat+name returns the
      * existing request rather than creating a duplicate, so the frontend can call this every time
-     * the resident lands on the "confirm your residency" step.
+     * the resident lands on the "confirm your residency" step. Short-circuits with status
+     * "flat_taken" (no request created) if that flat already has a registered resident — a second
+     * account for the same flat isn't the flow here, that's what the family-members step is for.
      */
     @PostMapping("/verification-requests")
     public ResponseEntity<VerificationStatusResponse> submitVerificationRequest(
             @Valid @RequestBody SubmitVerificationRequest body) {
+        if (userRepository.existsByFlatNumberIgnoreCase(body.flatNumber())) {
+            return ResponseEntity.ok(new VerificationStatusResponse("flat_taken",
+                    "Flat " + body.flatNumber() + " is already assigned to a resident."));
+        }
+
         ResidentVerificationRequest request = verificationRequestRepository
                 .findByFlatNumberIgnoreCaseAndNameIgnoreCase(body.flatNumber(), body.name())
                 .orElseGet(() -> {
