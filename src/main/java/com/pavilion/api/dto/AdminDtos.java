@@ -60,4 +60,33 @@ public class AdminDtos {
             @Pattern(regexp = "^(approve|reject)$", message = "action must be \"approve\" or \"reject\"")
             String action) {
     }
+
+    /**
+     * General account creation for the Members Management screen — unlike {@link CreateGuardRequest}
+     * this can create any role. flatNumber is validated in the controller rather than here, since
+     * the rule differs by role (residents need a real flat, guards/admins don't).
+     */
+    public record CreateMemberRequest(
+            @NotBlank(message = "Name is required")
+            @Pattern(regexp = "^[A-Za-z ]{2,100}$", message = "Name can only contain letters and spaces")
+            String name,
+            @NotBlank(message = "Email is required")
+            String email,
+            @NotBlank(message = "Password is required")
+            @Size(min = 8, max = 72, message = "Password must be between 8 and 72 characters")
+            String password,
+            String flatNumber,
+            @NotBlank(message = "Role is required")
+            @Pattern(regexp = "^(resident|guard|admin)$", message = "role must be \"resident\", \"guard\", or \"admin\"")
+            String role) {
+    }
+
+    /** All fields optional — send only what's changing. */
+    public record UpdateMemberRequest(
+            @Pattern(regexp = "^[A-Za-z ]{2,100}$", message = "Name can only contain letters and spaces")
+            String name,
+            String flatNumber,
+            @Pattern(regexp = "^(resident|guard|admin)$", message = "role must be \"resident\", \"guard\", or \"admin\"")
+            String role) {
+    }
 }

@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -207,5 +208,94 @@ class AdminControllerTest extends AbstractIntegrationTest {
                         .contentType("application/json")
                         .content("{\"name\":\"Another Guard\",\"email\":\"sam@pavilion.com\",\"password\":\"password123\"}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void listingUsersRequiresAdmin() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(get("/api/admin/users").cookie(sessionCookie(resident)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanListUsers() throws Exception {
+        User admin = createUser("admin");
+        createUser("resident");
+
+        mockMvc.perform(get("/api/admin/users").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2));
+    }
+
+    @Test
+    void adminCanCreateAResidentAccount() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/admin/users")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"New Resident\",\"email\":\"new-resident@test.local\","
+                                + "\"password\":\"password123\",\"flatNumber\":\"B-202\",\"role\":\"resident\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.role").value("resident"))
+                .andExpect(jsonPath("$.flatNumber").value("B-202"));
+    }
+
+    @Test
+    void creatingAResidentWithABadFlatNumberFails() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/admin/users")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"New Resident\",\"email\":\"new-resident@test.local\","
+                                + "\"password\":\"password123\",\"flatNumber\":\"not-a-flat\",\"role\":\"resident\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adminCanCreateAnAdminAccountWithoutAFlatNumber() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/admin/users")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"New Admin\",\"email\":\"new-admin@test.local\","
+                                + "\"password\":\"password123\",\"role\":\"admin\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.flatNumber").value("N/A"));
+    }
+
+    @Test
+    void adminCanUpdateAUsersRoleAndFlatNumber() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+
+        mockMvc.perform(patch("/api/admin/users/" + resident.getId())
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"role\":\"guard\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("guard"));
+    }
+
+    @Test
+    void adminCanDeleteAUser() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+
+        mockMvc.perform(delete("/api/admin/users/" + resident.getId()).cookie(sessionCookie(admin)))
+                .andExpect(status().isNoContent());
+
+        assertThat(userRepository.existsById(resident.getId())).isFalse();
+    }
+
+    @Test
+    void adminCannotDeleteTheirOwnAccount() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(delete("/api/admin/users/" + admin.getId()).cookie(sessionCookie(admin)))
+                .andExpect(status().isBadRequest());
     }
 }

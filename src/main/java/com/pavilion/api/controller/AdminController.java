@@ -1,6 +1,8 @@
 package com.pavilion.api.controller;
 
 import com.pavilion.api.dto.AdminDtos.CreateGuardRequest;
+import com.pavilion.api.dto.AdminDtos.CreateMemberRequest;
+import com.pavilion.api.dto.AdminDtos.UpdateMemberRequest;
 import com.pavilion.api.dto.AdminDtos.UpdateVerificationRequestBody;
 import com.pavilion.api.dto.AdminDtos.VerificationRequestSummary;
 import com.pavilion.api.dto.AuthDtos.AuthUserResponse;
@@ -19,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.regex.Pattern;
 
 // Every endpoint here is admin-only — SecurityConfig's default anyRequest().authenticated()
 // requires a session, and @PreAuthorize on top of that rejects anyone without the admin role.
@@ -99,5 +102,85 @@ public class AdminController {
         }
 
         return VerificationRequestSummary.from(verificationRequestRepository.save(request));
+    }
+
+    private static final Pattern FLAT_NUMBER_PATTERN = Pattern.compile("^[A-Za-z]-[0-9]{1,3}$");
+
+    /** Newest first, so freshly created accounts show up at the top of Members Management. */
+    @GetMapping("/users")
+    public List<AuthUserResponse> listUsers() {
+        return userRepository.findAll().stream()
+                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                .map(AuthUserResponse::from)
+                .toList();
+    }
+
+    /**
+     * General account creation for Members Management — unlike {@link #createGuard}, this can
+     * create a resident, guard, or admin. Residents need a real flat number; guards/admins get
+     * "N/A" since they aren't tied to one.
+     */
+    @PostMapping("/users")
+    public ResponseEntity<AuthUserResponse> createUser(@Valid @RequestBody CreateMemberRequest body) {
+        if (userRepository.findByEmail(body.email()).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "An account with this email already exists");
+        }
+
+        String flatNumber = body.flatNumber() == null ? "" : body.flatNumber().trim();
+        if ("resident".equals(body.role())) {
+            if (!FLAT_NUMBER_PATTERN.matcher(flatNumber).matches()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Flat number must be a letter, a hyphen, then 1-3 digits, e.g. A-100");
+            }
+        } else {
+            flatNumber = flatNumber.isEmpty() ? "N/A" : flatNumber;
+        }
+
+        User user = new User();
+        user.setName(body.name());
+        user.setEmail(body.email());
+        user.setPasswordHash(passwordEncoder.encode(body.password()));
+        user.setFlatNumber(flatNumber);
+        user.setRole(body.role());
+        user = userRepository.save(user);
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(AuthUserResponse.from(user));
+    }
+
+    @PatchMapping("/users/{id}")
+    public AuthUserResponse updateUser(@PathVariable Long id, @Valid @RequestBody UpdateMemberRequest body) {
+        User user = userRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "User not found"));
+
+        if (body.name() != null) {
+            user.setName(body.name());
+        }
+        if (body.role() != null) {
+            user.setRole(body.role());
+        }
+        if (body.flatNumber() != null) {
+            String flatNumber = body.flatNumber().trim();
+            String role = body.role() != null ? body.role() : user.getRole();
+            if ("resident".equals(role) && !FLAT_NUMBER_PATTERN.matcher(flatNumber).matches()) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "Flat number must be a letter, a hyphen, then 1-3 digits, e.g. A-100");
+            }
+            user.setFlatNumber(flatNumber.isEmpty() ? "N/A" : flatNumber);
+        }
+
+        return AuthUserResponse.from(userRepository.save(user));
+    }
+
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<Void> deleteUser(@PathVariable Long id, @AuthenticationPrincipal User admin) {
+        if (id.equals(admin.getId())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "You can't delete your own account");
+        }
+        if (!userRepository.existsById(id)) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "User not found");
+        }
+
+        userRepository.deleteById(id);
+        return ResponseEntity.noContent().build();
     }
 }
