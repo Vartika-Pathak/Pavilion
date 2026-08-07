@@ -73,14 +73,14 @@ This repo includes a `Dockerfile` that builds and runs the API — Render (or an
 1. Sign up at [render.com](https://render.com) (no credit card needed for the free tier) and connect your GitHub account.
 2. **New → Web Service** → pick this repo (`Pavilion`) → Render should auto-detect the `Dockerfile`. If it asks for a runtime, choose **Docker**.
 3. Instance type: **Free**.
-4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `MAILERSEND_API_KEY`, `MAIL_FROM`, `GEMINI_API_KEY`. Leave `PORT` alone — Render sets it automatically.
+4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `BREVO_API_KEY`, `MAIL_FROM`, `GEMINI_API_KEY`. Leave `PORT` alone — Render sets it automatically.
 5. Deploy. Render gives you a URL like `https://pavilion-api-xxxx.onrender.com` — that's your live backend.
 6. Once the frontend is deployed too (see its own repo), come back and set `ALLOWED_ORIGIN` to the frontend's URL, and add that same URL to the allowed domains list in the [Google reCAPTCHA admin console](https://www.google.com/recaptcha/admin).
 
 **Free-tier tradeoffs worth knowing:**
 - The disk is **ephemeral** — every redeploy or restart wipes the SQLite database (`data/pavilion.db`) and it starts empty again. Fine for testing; if you want data to persist long-term, that needs a paid plan with a persistent disk.
 - The free service **spins down after 15 minutes of inactivity** and takes ~30–50 seconds to wake back up on the next request — the first request after a quiet period will feel slow, that's normal.
-- **Outbound SMTP is blocked** on Render's free tier (and most free hosts) as an anti-spam measure — that's why email is sent over SendGrid's HTTPS API instead of Gmail SMTP (see below). Plain HTTPS isn't blocked.
+- **Outbound SMTP is blocked** on Render's free tier (and most free hosts) as an anti-spam measure — that's why email is sent over Brevo's HTTPS API instead of SMTP (see below). Plain HTTPS isn't blocked.
 
 ## Project layout
 
@@ -178,25 +178,25 @@ Two small operational extras came along with that:
 | `DB_USERNAME` / `DB_PASSWORD` | unset | Database credentials — SQLite ignores these; MySQL needs them |
 | `ALLOWED_ORIGIN` | `http://localhost:5173` | CORS origin allowed to send credentialed requests |
 | `RECAPTCHA_SECRET_KEY` | unset (signup/login fail until set) | Google reCAPTCHA v2 server-side secret key |
-| `MAILERSEND_API_KEY` | unset (OTP emails are skipped until set) | API key from [mailersend.com](https://mailersend.com) used to send OTP emails |
+| `BREVO_API_KEY` | unset (OTP emails are skipped until set) | API key from [brevo.com](https://www.brevo.com) used to send OTP emails |
 | `GEMINI_API_KEY` | unset (chat assistant returns 503 until set) | API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey), free tier, powers the chat widget |
-| `MAIL_FROM` | unset | "From" address for OTP emails — must be an address on your MailerSend trial/verified domain (see below). No default; both this and `MAILERSEND_API_KEY` must be set for email to send at all |
+| `MAIL_FROM` | unset | "From" address for OTP emails — must be single-sender-verified in Brevo (see below). No default; both this and `BREVO_API_KEY` must be set for email to send at all |
 
-### Setting up email (MailerSend)
+### Setting up email (Brevo)
 
-Email is sent over MailerSend's HTTPS API rather than SMTP — SMTP ports are blocked outbound on Render's free tier (and most free hosts), but plain HTTPS always works.
+Email is sent over Brevo's HTTPS API rather than SMTP — SMTP ports are blocked outbound on Render's free tier (and most free hosts), but plain HTTPS always works. Brevo was chosen over MailerSend (used previously) specifically because its free tier can send to **any recipient**, not just a pre-approved allowlist — no domain ownership needed, unlike MailerSend/Resend/Mailgun's sandbox modes.
 
-1. Sign up at [mailersend.com](https://mailersend.com) (no phone verification required, unlike some competitors).
-2. In the dashboard, find your **trial domain** (something like `test-xxxxxx.mlsender.net`) under **Domains**. Set `MAIL_FROM` to an address on it, e.g. `MS_XXXXXX@test-xxxxxx.mlsender.net` (the dashboard shows the exact address to use).
-3. Create an API token (**Integrations → API tokens**) and set it as `MAILERSEND_API_KEY`.
+1. Sign up at [brevo.com](https://www.brevo.com) (free tier: 300 emails/day, no credit card required).
+2. **Verify a single sender address** — Settings → Senders, Domains & Dedicated IPs → Senders → Add a sender, using any email you actually control (e.g. your own Gmail address). Brevo emails you a confirmation link; click it. This is the address to set as `MAIL_FROM` — no domain/DNS setup required, just that one email confirmation.
+3. Create an API key (**Settings → SMTP & API → API Keys → Generate a new API key**) and set it as `BREVO_API_KEY`.
 
 ```powershell
-$env:MAILERSEND_API_KEY="mlsn.xxxxxxxxxxxx"
-$env:MAIL_FROM="MS_XXXXXX@test-xxxxxx.mlsender.net"
+$env:BREVO_API_KEY="xkeysib-xxxxxxxxxxxx"
+$env:MAIL_FROM="your-verified-sender@example.com"
 .\mvnw.cmd spring-boot:run
 ```
 
-**Known limitation:** MailerSend's trial tier only allows sending to a small set of recipients you explicitly add as "trial recipients" in the dashboard (Domains → your trial domain → Recipients) — it can't email arbitrary visitors yet. Add your own email (and any test addresses you want to try) there. Sending to truly arbitrary recipients (real visitors, other residents signing up) requires verifying your own domain, which needs a domain you own.
+Once the sender is verified, mail can go to any recipient — real visitors, other residents signing up, anyone — with no extra allowlisting step.
 
 If these aren't set, the server still starts fine:
 - Visits without a visitor email still work exactly as before (OTP returned immediately, no verification step).
