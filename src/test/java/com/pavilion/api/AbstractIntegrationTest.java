@@ -41,7 +41,7 @@ public abstract class AbstractIntegrationTest {
         user.setName("Test " + role);
         user.setEmail(role + "-" + System.nanoTime() + "@test.local");
         user.setPasswordHash(passwordEncoder.encode("password123"));
-        user.setFlatNumber("A1");
+        user.setFlatNumber("A-1");
         user.setRole(role);
         return userRepository.save(user);
     }

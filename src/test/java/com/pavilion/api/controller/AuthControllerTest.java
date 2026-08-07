@@ -1,14 +1,20 @@
 package com.pavilion.api.controller;
 
 import com.pavilion.api.AbstractIntegrationTest;
+import com.pavilion.api.entity.ApprovedResident;
+import com.pavilion.api.entity.FamilyMember;
 import com.pavilion.api.entity.PendingSignup;
 import com.pavilion.api.entity.User;
+import com.pavilion.api.repository.ApprovedResidentRepository;
+import com.pavilion.api.repository.FamilyMemberRepository;
 import com.pavilion.api.repository.PendingSignupRepository;
 import com.pavilion.api.security.RecaptchaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,6 +33,12 @@ class AuthControllerTest extends AbstractIntegrationTest {
     @Autowired
     private PendingSignupRepository pendingSignupRepository;
 
+    @Autowired
+    private FamilyMemberRepository familyMemberRepository;
+
+    @Autowired
+    private ApprovedResidentRepository approvedResidentRepository;
+
     @BeforeEach
     void stubCaptchaAsPassing() {
         when(recaptchaService.isConfigured()).thenReturn(true);
@@ -38,7 +50,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"alex@test.local","flatNumber":"A1",
+                                {"name":"Alex","email":"alex@test.local","flatNumber":"A-1",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").value("alex@test.local"))
@@ -55,7 +67,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"bad-captcha@test.local","flatNumber":"A1",
+                                {"name":"Alex","email":"bad-captcha@test.local","flatNumber":"A-1",
                                  "password":"password123","captchaToken":"bad"}"""))
                 .andExpect(status().isBadRequest());
 
@@ -67,7 +79,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex99","email":"digits-in-name@test.local","flatNumber":"A1",
+                                {"name":"Alex99","email":"digits-in-name@test.local","flatNumber":"A-1",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("name: Name can only contain letters and spaces"));
@@ -75,7 +87,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex@!","email":"symbols-in-name@test.local","flatNumber":"A1",
+                                {"name":"Alex@!","email":"symbols-in-name@test.local","flatNumber":"A-1",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isBadRequest());
 
@@ -94,11 +106,11 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void signupAcceptsAFlatNumberThatsALetterFollowedByUpToThreeDigits() throws Exception {
+    void signupAcceptsAFlatNumberThatsALetterHyphenUpToThreeDigits() throws Exception {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"ok-flat@test.local","flatNumber":"A101",
+                                {"name":"Alex","email":"ok-flat@test.local","flatNumber":"A-101",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk());
     }
@@ -108,10 +120,10 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"too-many-digits@test.local","flatNumber":"A1234",
+                                {"name":"Alex","email":"too-many-digits@test.local","flatNumber":"A-1234",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("flatNumber: Flat number must be a letter followed by 1-3 digits, e.g. A101"));
+                .andExpect(jsonPath("$.error").value("flatNumber: Flat number must be a letter, a hyphen, then 1-3 digits, e.g. A-100"));
 
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
@@ -122,13 +134,24 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void signupRejectsAFlatNumberMissingTheHyphen() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Alex","email":"no-hyphen@test.local","flatNumber":"A101",
+                                 "password":"password123","captchaToken":"tok"}"""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("flatNumber: Flat number must be a letter, a hyphen, then 1-3 digits, e.g. A-100"));
+    }
+
+    @Test
     void signupRejectsAPasswordLongerThanBcryptsSeventyTwoByteLimit() throws Exception {
         String tooLong = "a".repeat(80);
 
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Alex","email":"long-password@test.local","flatNumber":"A1",
+                                {"name":"Alex","email":"long-password@test.local","flatNumber":"A-1",
                                  "password":"%s","captchaToken":"tok"}""".formatted(tooLong)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("password: Password must be between 8 and 72 characters"));
@@ -139,7 +162,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Sam","email":"sam@test.local","flatNumber":"B2",
+                                {"name":"Sam","email":"sam@test.local","flatNumber":"B-2",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk());
 
@@ -161,7 +184,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/signup")
                         .contentType("application/json")
                         .content("""
-                                {"name":"Kim","email":"kim@test.local","flatNumber":"C3",
+                                {"name":"Kim","email":"kim@test.local","flatNumber":"C-3",
                                  "password":"password123","captchaToken":"tok"}"""))
                 .andExpect(status().isOk());
 
@@ -219,5 +242,54 @@ class AuthControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/auth/logout"))
                 .andExpect(status().isNoContent())
                 .andExpect(cookie().maxAge("session", 0));
+    }
+
+    @Test
+    void verifyResidentSucceedsForANameOnTheApprovedRoster() throws Exception {
+        ApprovedResident approved = new ApprovedResident();
+        approved.setFlatNumber("A-101");
+        approved.setName("Alex Sharma");
+        approvedResidentRepository.save(approved);
+
+        mockMvc.perform(post("/api/auth/verify-resident")
+                        .contentType("application/json")
+                        .content("{\"name\":\"Alex Sharma\",\"flatNumber\":\"A-101\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verified").value(true));
+    }
+
+    @Test
+    void verifyResidentFailsForANameNotOnTheApprovedRoster() throws Exception {
+        mockMvc.perform(post("/api/auth/verify-resident")
+                        .contentType("application/json")
+                        .content("{\"name\":\"Someone Else\",\"flatNumber\":\"A-101\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.verified").value(false));
+    }
+
+    @Test
+    void signupWithFamilyMembersCreatesThemOnceTheOtpIsVerified() throws Exception {
+        mockMvc.perform(post("/api/auth/signup")
+                        .contentType("application/json")
+                        .content("""
+                                {"name":"Jordan","email":"jordan@test.local","flatNumber":"A-1",
+                                 "password":"password123","captchaToken":"tok",
+                                 "familyMembers":[
+                                   {"name":"Casey Jordan","relation":"Spouse","age":34},
+                                   {"name":"Riley Jordan","relation":"Child","age":6}
+                                 ]}"""))
+                .andExpect(status().isOk());
+
+        PendingSignup pending = pendingSignupRepository.findByEmail("jordan@test.local").orElseThrow();
+
+        mockMvc.perform(post("/api/auth/signup/verify")
+                        .contentType("application/json")
+                        .content("{\"pendingSignupId\":" + pending.getId() + ",\"otpCode\":\"" + pending.getOtpCode() + "\"}"))
+                .andExpect(status().isCreated());
+
+        User user = userRepository.findByEmail("jordan@test.local").orElseThrow();
+        List<FamilyMember> family = familyMemberRepository.findByUserId(user.getId());
+        assertThat(family).hasSize(2);
+        assertThat(family).extracting(FamilyMember::getName).containsExactlyInAnyOrder("Casey Jordan", "Riley Jordan");
     }
 }

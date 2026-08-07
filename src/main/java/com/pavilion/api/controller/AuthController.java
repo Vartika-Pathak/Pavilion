@@ -1,13 +1,21 @@
 package com.pavilion.api.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.pavilion.api.dto.AuthDtos.AuthUserResponse;
+import com.pavilion.api.dto.AuthDtos.FamilyMemberInput;
 import com.pavilion.api.dto.AuthDtos.LoginRequest;
 import com.pavilion.api.dto.AuthDtos.SignupPendingResponse;
 import com.pavilion.api.dto.AuthDtos.SignupRequest;
+import com.pavilion.api.dto.AuthDtos.VerifyResidentRequest;
+import com.pavilion.api.dto.AuthDtos.VerifyResidentResponse;
 import com.pavilion.api.dto.AuthDtos.VerifySignupOtpRequest;
+import com.pavilion.api.entity.FamilyMember;
 import com.pavilion.api.entity.PendingSignup;
 import com.pavilion.api.entity.User;
 import com.pavilion.api.exception.ApiException;
+import com.pavilion.api.repository.ApprovedResidentRepository;
+import com.pavilion.api.repository.FamilyMemberRepository;
 import com.pavilion.api.repository.PendingSignupRepository;
 import com.pavilion.api.repository.UserRepository;
 import com.pavilion.api.security.JwtAuthenticationFilter;
@@ -26,6 +34,7 @@ import org.springframework.web.bind.annotation.*;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.List;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -35,24 +44,52 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final PendingSignupRepository pendingSignupRepository;
+    private final ApprovedResidentRepository approvedResidentRepository;
+    private final FamilyMemberRepository familyMemberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final RecaptchaService recaptchaService;
     private final EmailService emailService;
+    private final ObjectMapper objectMapper;
 
     public AuthController(
             UserRepository userRepository,
             PendingSignupRepository pendingSignupRepository,
+            ApprovedResidentRepository approvedResidentRepository,
+            FamilyMemberRepository familyMemberRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
             RecaptchaService recaptchaService,
-            EmailService emailService) {
+            EmailService emailService,
+            ObjectMapper objectMapper) {
         this.userRepository = userRepository;
         this.pendingSignupRepository = pendingSignupRepository;
+        this.approvedResidentRepository = approvedResidentRepository;
+        this.familyMemberRepository = familyMemberRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.recaptchaService = recaptchaService;
         this.emailService = emailService;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Checked before a first-time resident is let into the signup form — confirms their name
+     * against the committee-maintained {@code approved_residents} allowlist for that flat. Always
+     * returns 200 with verified=false on a mismatch (rather than 404) so the frontend can tell
+     * "not on the list" apart from "this backend doesn't have this endpoint at all" (the Node
+     * backend, which a 404 would otherwise signal).
+     */
+    @PostMapping("/verify-resident")
+    public ResponseEntity<VerifyResidentResponse> verifyResident(@Valid @RequestBody VerifyResidentRequest body) {
+        boolean approved = approvedResidentRepository
+                .existsByFlatNumberIgnoreCaseAndNameIgnoreCase(body.flatNumber(), body.name());
+        if (!approved) {
+            return ResponseEntity.ok(new VerifyResidentResponse(false,
+                    "We couldn't verify that name for flat " + body.flatNumber()
+                            + " — please check with the committee."));
+        }
+        return ResponseEntity.ok(new VerifyResidentResponse(true, "Verified"));
     }
 
     /** Stages the account and emails an OTP — the real account isn't created until /signup/verify. */
@@ -74,6 +111,9 @@ public class AuthController {
         pending.setPasswordHash(passwordEncoder.encode(body.password()));
         pending.setOtpCode(generateOtpCode());
         pending.setExpiresAt(Instant.now().plus(10, ChronoUnit.MINUTES));
+        if (body.familyMembers() != null && !body.familyMembers().isEmpty()) {
+            pending.setFamilyMembersJson(writeFamilyMembersJson(body.familyMembers()));
+        }
         pending = pendingSignupRepository.save(pending);
 
         emailService.sendSignupOtp(pending.getEmail(), pending.getName(), pending.getOtpCode());
@@ -107,6 +147,17 @@ public class AuthController {
         user.setPasswordHash(pending.getPasswordHash());
         user = userRepository.save(user);
 
+        if (pending.getFamilyMembersJson() != null) {
+            for (FamilyMemberInput member : readFamilyMembersJson(pending.getFamilyMembersJson())) {
+                FamilyMember familyMember = new FamilyMember();
+                familyMember.setUserId(user.getId());
+                familyMember.setName(member.name());
+                familyMember.setRelation(member.relation());
+                familyMember.setAge(member.age());
+                familyMemberRepository.save(familyMember);
+            }
+        }
+
         pendingSignupRepository.delete(pending);
 
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -116,6 +167,23 @@ public class AuthController {
 
     private static String generateOtpCode() {
         return String.valueOf(100000 + RANDOM.nextInt(900000));
+    }
+
+    private String writeFamilyMembersJson(List<FamilyMemberInput> familyMembers) {
+        try {
+            return objectMapper.writeValueAsString(familyMembers);
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Couldn't process family member details");
+        }
+    }
+
+    private List<FamilyMemberInput> readFamilyMembersJson(String json) {
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<FamilyMemberInput>>() {
+            });
+        } catch (Exception e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Couldn't process family member details");
+        }
     }
 
     @PostMapping("/login")

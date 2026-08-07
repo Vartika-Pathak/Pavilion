@@ -26,6 +26,10 @@ public class PendingSignup {
     @Column(name = "otp_code", nullable = false)
     private String otpCode;
 
+    /** JSON-serialized list of AuthDtos.FamilyMemberInput, staged here until the real account (and its family_members rows) get created on OTP verification. Null when the resident didn't add any family members. */
+    @Column(name = "family_members_json")
+    private String familyMembersJson;
+
     @Column(name = "expires_at", nullable = false)
     private Instant expiresAt;
 
@@ -82,6 +86,14 @@ public class PendingSignup {
 
     public void setExpiresAt(Instant expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public String getFamilyMembersJson() {
+        return familyMembersJson;
+    }
+
+    public void setFamilyMembersJson(String familyMembersJson) {
+        this.familyMembersJson = familyMembersJson;
     }
 
     public Instant getCreatedAt() {

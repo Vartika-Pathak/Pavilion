@@ -48,7 +48,7 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/signup/verify",
-                                "/api/auth/login", "/api/auth/logout")
+                                "/api/auth/verify-resident", "/api/auth/login", "/api/auth/logout")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/healthz", "/api/chat/suggestions").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()

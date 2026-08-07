@@ -194,7 +194,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .contentType("application/json")
                         .content("{\"otpCode\":\"" + otpCode + "\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.residentFlatNumber").value("A1"));
+                .andExpect(jsonPath("$.residentFlatNumber").value("A-1"));
 
         mockMvc.perform(post("/api/visits/" + visitId + "/decide")
                         .cookie(sessionCookie(guard))
