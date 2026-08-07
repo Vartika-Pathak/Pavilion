@@ -48,9 +48,11 @@ public class SecurityConfig {
                 .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/signup", "/api/auth/signup/verify",
-                                "/api/auth/verify-resident", "/api/auth/login", "/api/auth/logout")
+                                "/api/auth/verification-requests", "/api/auth/login", "/api/auth/logout")
                         .permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/healthz", "/api/chat/suggestions").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/healthz", "/api/chat/suggestions",
+                                "/api/auth/verification-requests/status")
+                        .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

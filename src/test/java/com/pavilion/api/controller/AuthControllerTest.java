@@ -1,13 +1,13 @@
 package com.pavilion.api.controller;
 
 import com.pavilion.api.AbstractIntegrationTest;
-import com.pavilion.api.entity.ApprovedResident;
 import com.pavilion.api.entity.FamilyMember;
 import com.pavilion.api.entity.PendingSignup;
+import com.pavilion.api.entity.ResidentVerificationRequest;
 import com.pavilion.api.entity.User;
-import com.pavilion.api.repository.ApprovedResidentRepository;
 import com.pavilion.api.repository.FamilyMemberRepository;
 import com.pavilion.api.repository.PendingSignupRepository;
+import com.pavilion.api.repository.ResidentVerificationRequestRepository;
 import com.pavilion.api.security.RecaptchaService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,7 +37,7 @@ class AuthControllerTest extends AbstractIntegrationTest {
     private FamilyMemberRepository familyMemberRepository;
 
     @Autowired
-    private ApprovedResidentRepository approvedResidentRepository;
+    private ResidentVerificationRequestRepository verificationRequestRepository;
 
     @BeforeEach
     void stubCaptchaAsPassing() {
@@ -245,26 +245,57 @@ class AuthControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void verifyResidentSucceedsForANameOnTheApprovedRoster() throws Exception {
-        ApprovedResident approved = new ApprovedResident();
-        approved.setFlatNumber("A-101");
-        approved.setName("Alex Sharma");
-        approvedResidentRepository.save(approved);
-
-        mockMvc.perform(post("/api/auth/verify-resident")
+    void submittingAVerificationRequestCreatesAPendingOne() throws Exception {
+        mockMvc.perform(post("/api/auth/verification-requests")
                         .contentType("application/json")
                         .content("{\"name\":\"Alex Sharma\",\"flatNumber\":\"A-101\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.verified").value(true));
+                .andExpect(jsonPath("$.status").value("pending"));
+
+        ResidentVerificationRequest saved = verificationRequestRepository
+                .findByFlatNumberIgnoreCaseAndNameIgnoreCase("A-101", "Alex Sharma").orElseThrow();
+        assertThat(saved.isDocumentsVerified()).isFalse();
+        assertThat(saved.isPaymentReceived()).isFalse();
     }
 
     @Test
-    void verifyResidentFailsForANameNotOnTheApprovedRoster() throws Exception {
-        mockMvc.perform(post("/api/auth/verify-resident")
+    void resubmittingTheSameFlatAndNameReturnsTheExistingRequestInstead() throws Exception {
+        mockMvc.perform(post("/api/auth/verification-requests")
                         .contentType("application/json")
-                        .content("{\"name\":\"Someone Else\",\"flatNumber\":\"A-101\"}"))
+                        .content("{\"name\":\"Alex Sharma\",\"flatNumber\":\"A-101\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/auth/verification-requests")
+                        .contentType("application/json")
+                        .content("{\"name\":\"Alex Sharma\",\"flatNumber\":\"A-101\"}"))
+                .andExpect(status().isOk());
+
+        assertThat(verificationRequestRepository.findAllByOrderByStatusAscCreatedAtAsc()).hasSize(1);
+    }
+
+    @Test
+    void verificationStatusReflectsApproval() throws Exception {
+        ResidentVerificationRequest request = new ResidentVerificationRequest();
+        request.setFlatNumber("A-101");
+        request.setName("Alex Sharma");
+        request.setDocumentsVerified(true);
+        request.setPaymentReceived(true);
+        request.setStatus("approved");
+        verificationRequestRepository.save(request);
+
+        mockMvc.perform(get("/api/auth/verification-requests/status")
+                        .param("flatNumber", "A-101")
+                        .param("name", "Alex Sharma"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.verified").value(false));
+                .andExpect(jsonPath("$.status").value("approved"));
+    }
+
+    @Test
+    void verificationStatusIsNotFoundWhenNoRequestMatches() throws Exception {
+        mockMvc.perform(get("/api/auth/verification-requests/status")
+                        .param("flatNumber", "A-101")
+                        .param("name", "Nobody Here"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("not_found"));
     }
 
     @Test

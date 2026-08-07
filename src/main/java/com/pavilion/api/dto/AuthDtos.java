@@ -46,7 +46,7 @@ public class AuthDtos {
             Integer age) {
     }
 
-    public record VerifyResidentRequest(
+    public record SubmitVerificationRequest(
             @NotBlank(message = "Name is required")
             @Pattern(regexp = "^[A-Za-z ]{2,100}$", message = "Name can only contain letters and spaces")
             String name,
@@ -55,7 +55,8 @@ public class AuthDtos {
             String flatNumber) {
     }
 
-    public record VerifyResidentResponse(boolean verified, String message) {
+    /** status is one of "pending", "approved", "rejected", or "not_found" (no matching request yet). */
+    public record VerificationStatusResponse(String status, String message) {
     }
 
     public record LoginRequest(

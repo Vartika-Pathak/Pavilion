@@ -7,16 +7,17 @@ import com.pavilion.api.dto.AuthDtos.FamilyMemberInput;
 import com.pavilion.api.dto.AuthDtos.LoginRequest;
 import com.pavilion.api.dto.AuthDtos.SignupPendingResponse;
 import com.pavilion.api.dto.AuthDtos.SignupRequest;
-import com.pavilion.api.dto.AuthDtos.VerifyResidentRequest;
-import com.pavilion.api.dto.AuthDtos.VerifyResidentResponse;
+import com.pavilion.api.dto.AuthDtos.SubmitVerificationRequest;
+import com.pavilion.api.dto.AuthDtos.VerificationStatusResponse;
 import com.pavilion.api.dto.AuthDtos.VerifySignupOtpRequest;
 import com.pavilion.api.entity.FamilyMember;
 import com.pavilion.api.entity.PendingSignup;
+import com.pavilion.api.entity.ResidentVerificationRequest;
 import com.pavilion.api.entity.User;
 import com.pavilion.api.exception.ApiException;
-import com.pavilion.api.repository.ApprovedResidentRepository;
 import com.pavilion.api.repository.FamilyMemberRepository;
 import com.pavilion.api.repository.PendingSignupRepository;
+import com.pavilion.api.repository.ResidentVerificationRequestRepository;
 import com.pavilion.api.repository.UserRepository;
 import com.pavilion.api.security.JwtAuthenticationFilter;
 import com.pavilion.api.security.JwtService;
@@ -44,7 +45,7 @@ public class AuthController {
 
     private final UserRepository userRepository;
     private final PendingSignupRepository pendingSignupRepository;
-    private final ApprovedResidentRepository approvedResidentRepository;
+    private final ResidentVerificationRequestRepository verificationRequestRepository;
     private final FamilyMemberRepository familyMemberRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -55,7 +56,7 @@ public class AuthController {
     public AuthController(
             UserRepository userRepository,
             PendingSignupRepository pendingSignupRepository,
-            ApprovedResidentRepository approvedResidentRepository,
+            ResidentVerificationRequestRepository verificationRequestRepository,
             FamilyMemberRepository familyMemberRepository,
             PasswordEncoder passwordEncoder,
             JwtService jwtService,
@@ -64,7 +65,7 @@ public class AuthController {
             ObjectMapper objectMapper) {
         this.userRepository = userRepository;
         this.pendingSignupRepository = pendingSignupRepository;
-        this.approvedResidentRepository = approvedResidentRepository;
+        this.verificationRequestRepository = verificationRequestRepository;
         this.familyMemberRepository = familyMemberRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
@@ -74,22 +75,47 @@ public class AuthController {
     }
 
     /**
-     * Checked before a first-time resident is let into the signup form — confirms their name
-     * against the committee-maintained {@code approved_residents} allowlist for that flat. Always
-     * returns 200 with verified=false on a mismatch (rather than 404) so the frontend can tell
-     * "not on the list" apart from "this backend doesn't have this endpoint at all" (the Node
-     * backend, which a 404 would otherwise signal).
+     * A first-time resident's entry point into signup — submits a name + flat number for an admin
+     * to review (see AdminController). Idempotent: re-submitting the same flat+name returns the
+     * existing request rather than creating a duplicate, so the frontend can call this every time
+     * the resident lands on the "confirm your residency" step.
      */
-    @PostMapping("/verify-resident")
-    public ResponseEntity<VerifyResidentResponse> verifyResident(@Valid @RequestBody VerifyResidentRequest body) {
-        boolean approved = approvedResidentRepository
-                .existsByFlatNumberIgnoreCaseAndNameIgnoreCase(body.flatNumber(), body.name());
-        if (!approved) {
-            return ResponseEntity.ok(new VerifyResidentResponse(false,
-                    "We couldn't verify that name for flat " + body.flatNumber()
-                            + " — please check with the committee."));
-        }
-        return ResponseEntity.ok(new VerifyResidentResponse(true, "Verified"));
+    @PostMapping("/verification-requests")
+    public ResponseEntity<VerificationStatusResponse> submitVerificationRequest(
+            @Valid @RequestBody SubmitVerificationRequest body) {
+        ResidentVerificationRequest request = verificationRequestRepository
+                .findByFlatNumberIgnoreCaseAndNameIgnoreCase(body.flatNumber(), body.name())
+                .orElseGet(() -> {
+                    ResidentVerificationRequest created = new ResidentVerificationRequest();
+                    created.setFlatNumber(body.flatNumber());
+                    created.setName(body.name());
+                    return verificationRequestRepository.save(created);
+                });
+
+        return ResponseEntity.ok(verificationStatusResponse(request));
+    }
+
+    /**
+     * Polled by the resident's "under review" screen. Always returns 200 (status="not_found" if
+     * nothing matches) rather than 404, so the frontend can tell "no request yet" apart from "this
+     * backend doesn't have the endpoint at all" (the Node backend, which skips this step entirely).
+     */
+    @GetMapping("/verification-requests/status")
+    public ResponseEntity<VerificationStatusResponse> verificationStatus(
+            @RequestParam String flatNumber, @RequestParam String name) {
+        return ResponseEntity.ok(verificationRequestRepository
+                .findByFlatNumberIgnoreCaseAndNameIgnoreCase(flatNumber, name)
+                .map(this::verificationStatusResponse)
+                .orElseGet(() -> new VerificationStatusResponse("not_found", "No verification request found")));
+    }
+
+    private VerificationStatusResponse verificationStatusResponse(ResidentVerificationRequest request) {
+        String message = switch (request.getStatus()) {
+            case "approved" -> "Verified";
+            case "rejected" -> "Your request was declined — please check with the committee.";
+            default -> "Your request is under review by the committee.";
+        };
+        return new VerificationStatusResponse(request.getStatus(), message);
     }
 
     /** Stages the account and emails an OTP — the real account isn't created until /signup/verify. */
