@@ -43,7 +43,7 @@ class MaintenanceRequestControllerTest extends AbstractIntegrationTest {
                         .param("description", "Leaking tap in the kitchen"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.photoUrls.length()").value(1))
-                .andExpect(jsonPath("$.photoUrls[0]").value(org.hamcrest.Matchers.startsWith("/uploads/")));
+                .andExpect(jsonPath("$.photoUrls[0]").value(org.hamcrest.Matchers.startsWith("/api/uploads/")));
     }
 
     // Guards against a real regression that slipped past every other test here: those only check

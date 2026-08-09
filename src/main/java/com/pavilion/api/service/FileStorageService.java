@@ -32,7 +32,7 @@ public class FileStorageService {
         this.uploadedFileRepository = uploadedFileRepository;
     }
 
-    /** Validates and saves each file, returning "/uploads/{id}" URLs in the same order. */
+    /** Validates and saves each file, returning "/api/uploads/{id}" URLs in the same order. */
     public List<String> storeImages(List<MultipartFile> files) {
         if (files == null || files.isEmpty()) {
             return List.of();
@@ -64,7 +64,7 @@ public class FileStorageService {
                 throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not save uploaded file");
             }
             uploaded = uploadedFileRepository.save(uploaded);
-            urls.add("/uploads/" + uploaded.getId());
+            urls.add("/api/uploads/" + uploaded.getId());
         }
         return urls;
     }

@@ -25,7 +25,7 @@ public class UploadedFileController {
         this.uploadedFileRepository = uploadedFileRepository;
     }
 
-    @GetMapping("/uploads/{id}")
+    @GetMapping("/api/uploads/{id}")
     public ResponseEntity<byte[]> getFile(@PathVariable Long id) {
         UploadedFile file = uploadedFileRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "File not found"));
