@@ -1,6 +1,7 @@
 package com.pavilion.api.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.pavilion.api.security.AuditLogFilter;
 import com.pavilion.api.security.JwtAuthenticationFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,10 +34,12 @@ public class SecurityConfig {
     private String allowedOrigin;
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final AuditLogFilter auditLogFilter;
     private final ObjectMapper objectMapper;
 
-    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, ObjectMapper objectMapper) {
+    public SecurityConfig(JwtAuthenticationFilter jwtAuthenticationFilter, AuditLogFilter auditLogFilter, ObjectMapper objectMapper) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.auditLogFilter = auditLogFilter;
         this.objectMapper = objectMapper;
     }
 
@@ -51,7 +54,7 @@ public class SecurityConfig {
                                 "/api/auth/verification-requests", "/api/auth/login", "/api/auth/logout")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/healthz", "/api/chat/suggestions",
-                                "/api/auth/verification-requests/status")
+                                "/api/auth/verification-requests/status", "/api/events", "/api/events/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
@@ -62,7 +65,8 @@ public class SecurityConfig {
                                 writeJsonError(response, 401, "Not signed in"))
                         .accessDeniedHandler((request, response, accessDeniedException) ->
                                 writeJsonError(response, 403, "You don't have permission to do that")))
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(auditLogFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
