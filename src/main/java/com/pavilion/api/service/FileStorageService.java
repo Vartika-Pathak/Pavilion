@@ -32,7 +32,7 @@ public class FileStorageService {
         this.uploadedFileRepository = uploadedFileRepository;
     }
 
-    /** Validates and saves each file, returning "/api/uploads/{id}" URLs in the same order. */
+    /** Validates and saves each file, returning "/api/uploads?id={id}" URLs in the same order. */
     public List<String> storeImages(List<MultipartFile> files) {
         if (files == null || files.isEmpty()) {
             return List.of();
@@ -64,7 +64,7 @@ public class FileStorageService {
                 throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not save uploaded file");
             }
             uploaded = uploadedFileRepository.save(uploaded);
-            urls.add("/api/uploads/" + uploaded.getId());
+            urls.add("/api/uploads?id=" + uploaded.getId());
         }
         return urls;
     }
@@ -75,7 +75,7 @@ public class FileStorageService {
             return;
         }
         for (String url : urls) {
-            String idPart = url.substring(url.lastIndexOf('/') + 1);
+            String idPart = url.substring(url.lastIndexOf('=') + 1);
             try {
                 uploadedFileRepository.deleteById(Long.parseLong(idPart));
             } catch (RuntimeException e) {
