@@ -60,7 +60,9 @@ public class AuditLogFilter extends OncePerRequestFilter {
             Map.entry("/api/resident-meetings", "Viewed Resident Meetings"),
             Map.entry("/api/members", "Viewed Members"),
             Map.entry("/api/emergency-alerts", "Viewed Emergency Alerts"),
-            Map.entry("/api/visits", "Viewed Visitor Entries"));
+            Map.entry("/api/visits", "Viewed Visitor Entries"),
+            Map.entry("/api/flats/mine", "Viewed My Flat"),
+            Map.entry("/api/flats/directory", "Viewed Flat Directory"));
 
     private final AuditLogRepository auditLogRepository;
     private final ObjectMapper objectMapper;

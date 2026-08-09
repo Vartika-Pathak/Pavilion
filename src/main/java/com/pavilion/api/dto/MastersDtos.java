@@ -3,13 +3,17 @@ package com.pavilion.api.dto;
 import com.pavilion.api.entity.Building;
 import com.pavilion.api.entity.ExpenseCategory;
 import com.pavilion.api.entity.Flat;
+import com.pavilion.api.entity.FlatChangeRequest;
 import com.pavilion.api.entity.Society;
+import com.pavilion.api.entity.User;
 import com.pavilion.api.entity.Vendor;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+
+import java.time.Instant;
 
 public class MastersDtos {
 
@@ -41,11 +45,15 @@ public class MastersDtos {
 
     public record FlatResponse(
             Long id, Long buildingId, String buildingName, String flatNumber,
-            String flatType, boolean occupied, String ownershipType) {
-        public static FlatResponse from(Flat flat, String buildingName) {
+            String flatType, boolean occupied, String ownershipType,
+            Long residentId, String residentName, String residentEmail) {
+        // resident is null when the flat has no assigned resident yet.
+        public static FlatResponse from(Flat flat, String buildingName, User resident) {
             return new FlatResponse(
                     flat.getId(), flat.getBuildingId(), buildingName, flat.getFlatNumber(),
-                    flat.getFlatType(), flat.isOccupied(), flat.getOwnershipType());
+                    flat.getFlatType(), flat.isOccupied(), flat.getOwnershipType(),
+                    flat.getResidentId(), resident != null ? resident.getName() : null,
+                    resident != null ? resident.getEmail() : null);
         }
     }
 
@@ -58,7 +66,43 @@ public class MastersDtos {
             @NotNull(message = "Occupied is required") Boolean occupied,
             @NotBlank(message = "Ownership type is required")
             @Pattern(regexp = "^(owner|rented)$", message = "ownershipType must be \"owner\" or \"rented\"")
-            String ownershipType) {
+            String ownershipType,
+            // Null/omitted means "no resident assigned yet" — not every flat is occupied by a
+            // signed-up account (could be vacant, or occupied by someone who hasn't signed up).
+            Long residentId) {
+    }
+
+    // The guard-facing read-only lookup — deliberately narrower than FlatResponse (no ownership
+    // type, no ids beyond what's needed to identify the flat/resident), since guards need "who
+    // lives here" for verifying visitors, not the full Masters record.
+    public record FlatDirectoryEntry(
+            Long flatId, String buildingName, String flatNumber, boolean occupied,
+            String residentName, String residentEmail) {
+        public static FlatDirectoryEntry from(Flat flat, String buildingName, User resident) {
+            return new FlatDirectoryEntry(
+                    flat.getId(), buildingName, flat.getFlatNumber(), flat.isOccupied(),
+                    resident != null ? resident.getName() : null,
+                    resident != null ? resident.getEmail() : null);
+        }
+    }
+
+    public record FlatChangeRequestRequest(@NotBlank(message = "Message is required") String message) {
+    }
+
+    public record FlatChangeRequestResponse(
+            Long id, Long flatId, Long residentId, String residentName, String message, String status,
+            Instant createdAt) {
+        public static FlatChangeRequestResponse from(FlatChangeRequest request) {
+            return new FlatChangeRequestResponse(
+                    request.getId(), request.getFlatId(), request.getResidentId(), request.getResidentName(),
+                    request.getMessage(), request.getStatus(), request.getCreatedAt());
+        }
+    }
+
+    public record FlatChangeRequestStatusRequest(
+            @NotBlank(message = "Status is required")
+            @Pattern(regexp = "^(pending|reviewed)$", message = "status must be pending or reviewed")
+            String status) {
     }
 
     public record ExpenseCategoryResponse(Long id, String name, Integer gstSlabPercent) {

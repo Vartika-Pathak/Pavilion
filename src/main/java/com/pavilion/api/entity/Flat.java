@@ -28,6 +28,11 @@ public class Flat {
     @Column(name = "ownership_type", nullable = false)
     private String ownershipType = "owner";
 
+    // Null until an admin assigns a resident account to this flat — a flat can exist (e.g. newly
+    // built, vacant) before anyone lives in it.
+    @Column(name = "resident_id")
+    private Long residentId;
+
     public Long getId() {
         return id;
     }
@@ -70,5 +75,13 @@ public class Flat {
 
     public void setOwnershipType(String ownershipType) {
         this.ownershipType = ownershipType;
+    }
+
+    public Long getResidentId() {
+        return residentId;
+    }
+
+    public void setResidentId(Long residentId) {
+        this.residentId = residentId;
     }
 }

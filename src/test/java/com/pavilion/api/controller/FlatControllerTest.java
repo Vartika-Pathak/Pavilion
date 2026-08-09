@@ -95,4 +95,111 @@ class FlatControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(delete("/api/flats/" + flatId).cookie(sessionCookie(admin)))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    void adminCanAssignAResidentToAFlat() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+        Building building = createBuilding("Tower A");
+
+        mockMvc.perform(post("/api/flats")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"buildingId\":" + building.getId() + ",\"flatNumber\":\"A-1\",\"flatType\":\"2bhk\",\"occupied\":true,"
+                                + "\"ownershipType\":\"owner\",\"residentId\":" + resident.getId() + "}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.residentId").value(resident.getId()))
+                .andExpect(jsonPath("$.residentName").value(resident.getName()));
+    }
+
+    @Test
+    void assigningANonResidentAccountFails() throws Exception {
+        User admin = createUser("admin");
+        User guard = createUser("guard");
+        Building building = createBuilding("Tower A");
+
+        mockMvc.perform(post("/api/flats")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"buildingId\":" + building.getId() + ",\"flatNumber\":\"A-1\",\"flatType\":\"2bhk\",\"occupied\":true,"
+                                + "\"ownershipType\":\"owner\",\"residentId\":" + guard.getId() + "}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void guardCanReadTheDirectoryButNotWrite() throws Exception {
+        User admin = createUser("admin");
+        User guard = createUser("guard");
+        User resident = createUser("resident");
+        Building building = createBuilding("Tower A");
+
+        mockMvc.perform(post("/api/flats")
+                .cookie(sessionCookie(admin))
+                .contentType("application/json")
+                .content("{\"buildingId\":" + building.getId() + ",\"flatNumber\":\"A-1\",\"flatType\":\"2bhk\",\"occupied\":true,"
+                        + "\"ownershipType\":\"owner\",\"residentId\":" + resident.getId() + "}"));
+
+        mockMvc.perform(get("/api/flats/directory").cookie(sessionCookie(guard)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].residentName").value(resident.getName()));
+
+        mockMvc.perform(post("/api/flats")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"buildingId\":" + building.getId() + ",\"flatNumber\":\"A-2\",\"flatType\":\"2bhk\",\"occupied\":false,\"ownershipType\":\"owner\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void residentSeesTheirOwnFlatOnlyOnceAssigned() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+        Building building = createBuilding("Tower A");
+
+        mockMvc.perform(get("/api/flats/mine").cookie(sessionCookie(resident)))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(post("/api/flats")
+                .cookie(sessionCookie(admin))
+                .contentType("application/json")
+                .content("{\"buildingId\":" + building.getId() + ",\"flatNumber\":\"A-1\",\"flatType\":\"2bhk\",\"occupied\":true,"
+                        + "\"ownershipType\":\"owner\",\"residentId\":" + resident.getId() + "}"));
+
+        mockMvc.perform(get("/api/flats/mine").cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flatNumber").value("A-1"));
+    }
+
+    @Test
+    void residentCanRequestAChangeOnlyForTheirOwnFlat() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+        User otherResident = createUser("resident");
+        Building building = createBuilding("Tower A");
+
+        String response = mockMvc.perform(post("/api/flats")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"buildingId\":" + building.getId() + ",\"flatNumber\":\"A-1\",\"flatType\":\"2bhk\",\"occupied\":true,"
+                                + "\"ownershipType\":\"owner\",\"residentId\":" + resident.getId() + "}"))
+                .andReturn().getResponse().getContentAsString();
+        Number flatId = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+
+        mockMvc.perform(post("/api/flats/" + flatId + "/change-requests")
+                        .cookie(sessionCookie(otherResident))
+                        .contentType("application/json")
+                        .content("{\"message\":\"Wrong flat type\"}"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/flats/" + flatId + "/change-requests")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"message\":\"Wrong flat type, should be 3bhk\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("pending"));
+
+        mockMvc.perform(get("/api/flats/change-requests").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].message").value("Wrong flat type, should be 3bhk"));
+    }
 }
