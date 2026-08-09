@@ -56,7 +56,7 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/healthz", "/api/chat/suggestions",
                                 "/api/auth/verification-requests/status", "/api/events", "/api/events/**",
                                 "/api/gallery", "/api/news", "/api/news/**", "/api/resident-meetings",
-                                "/api/members", "/api/members/**", "/api/stats", "/uploads/**")
+                                "/api/members", "/api/members/**", "/api/stats")
                         .permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/chat/message", "/api/contact", "/api/join-requests")
                         .permitAll()
