@@ -5,10 +5,15 @@ import com.pavilion.api.entity.Building;
 import com.pavilion.api.entity.User;
 import com.pavilion.api.repository.AuditLogRepository;
 import com.pavilion.api.repository.BuildingRepository;
+import com.pavilion.api.security.RecaptchaService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -17,10 +22,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class AuditLogControllerTest extends AbstractIntegrationTest {
 
+    @MockBean
+    private RecaptchaService recaptchaService;
+
     @Autowired
     private AuditLogRepository auditLogRepository;
     @Autowired
     private BuildingRepository buildingRepository;
+
+    @BeforeEach
+    void stubCaptchaAsPassing() {
+        when(recaptchaService.isConfigured()).thenReturn(true);
+        when(recaptchaService.verify(any())).thenReturn(true);
+    }
 
     @Test
     void listRequiresAuthentication() throws Exception {
@@ -80,11 +94,40 @@ class AuditLogControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void loginDoesNotCreateAnAuditLogEntry() throws Exception {
+    void loginWithTheWrongPasswordDoesNotCreateAnAuditLogEntry() throws Exception {
         long countBefore = auditLogRepository.count();
         mockMvc.perform(post("/api/auth/login")
                         .contentType("application/json")
                         .content("{\"email\":\"nobody@test.local\",\"password\":\"wrongpassword\"}"));
         assertThat(auditLogRepository.count()).isEqualTo(countBefore);
+    }
+
+    @Test
+    void aSuccessfulLoginCreatesAnAuditLogEntryForAnyRole() throws Exception {
+        User guard = createUser("guard");
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/auth/login")
+                        .contentType("application/json")
+                        .content("{\"email\":\"" + guard.getEmail() + "\",\"password\":\"password123\",\"captchaToken\":\"tok\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/audit-logs").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].adminName").value(guard.getName()))
+                .andExpect(jsonPath("$[0].summary").value("Logged in"));
+    }
+
+    @Test
+    void viewingACuratedPageCreatesAnAuditLogEntry() throws Exception {
+        User resident = createUser("resident");
+        User admin = createUser("admin");
+
+        mockMvc.perform(get("/api/events").cookie(sessionCookie(resident))).andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/audit-logs").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].adminName").value(resident.getName()))
+                .andExpect(jsonPath("$[0].summary").value("Viewed Events"));
     }
 }
