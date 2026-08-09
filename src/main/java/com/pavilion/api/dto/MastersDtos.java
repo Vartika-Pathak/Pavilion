@@ -14,6 +14,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 
 import java.time.Instant;
+import java.util.List;
 
 public class MastersDtos {
 
@@ -103,6 +104,15 @@ public class MastersDtos {
             @NotBlank(message = "Status is required")
             @Pattern(regexp = "^(pending|reviewed)$", message = "status must be pending or reviewed")
             String status) {
+    }
+
+    // A one-time (but safely re-runnable) catch-up for accounts that existed before flats could
+    // be assigned to a resident — matches each resident's free-text profile flatNumber against an
+    // existing, currently-unassigned Flat with the same number. Never overwrites an assignment
+    // that's already set, and never creates new Flat/Building rows (ambiguous which building a
+    // bare flat number belongs to) — those cases are surfaced in issues for the admin to resolve
+    // by hand in Flat Resident.
+    public record SyncFlatResidentsResult(int matchedCount, List<String> issues) {
     }
 
     public record ExpenseCategoryResponse(Long id, String name, Integer gstSlabPercent) {

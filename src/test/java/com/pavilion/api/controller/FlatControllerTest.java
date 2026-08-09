@@ -2,8 +2,10 @@ package com.pavilion.api.controller;
 
 import com.pavilion.api.AbstractIntegrationTest;
 import com.pavilion.api.entity.Building;
+import com.pavilion.api.entity.Flat;
 import com.pavilion.api.entity.User;
 import com.pavilion.api.repository.BuildingRepository;
+import com.pavilion.api.repository.FlatRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -18,6 +20,8 @@ class FlatControllerTest extends AbstractIntegrationTest {
 
     @Autowired
     private BuildingRepository buildingRepository;
+    @Autowired
+    private FlatRepository flatRepository;
 
     private Building createBuilding(String name) {
         Building building = new Building();
@@ -201,5 +205,45 @@ class FlatControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(get("/api/flats/change-requests").cookie(sessionCookie(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].message").value("Wrong flat type, should be 3bhk"));
+    }
+
+    private User createResidentWithFlatNumber(String flatNumber) {
+        User resident = createUser("resident");
+        resident.setFlatNumber(flatNumber);
+        return userRepository.save(resident);
+    }
+
+    @Test
+    void syncResidentsMatchesByFlatNumberWithoutOverwritingExistingAssignments() throws Exception {
+        User admin = createUser("admin");
+        Building building = createBuilding("Tower A");
+
+        Flat matchable = new Flat();
+        matchable.setBuildingId(building.getId());
+        matchable.setFlatNumber("A-101");
+        matchable.setFlatType("2bhk");
+        matchable.setOccupied(true);
+        matchable.setOwnershipType("owner");
+        flatRepository.save(matchable);
+
+        User matching = createResidentWithFlatNumber("A-101");
+        User noFlatYet = createResidentWithFlatNumber("Z-999");
+
+        mockMvc.perform(post("/api/flats/sync-residents").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchedCount").value(1))
+                .andExpect(jsonPath("$.issues.length()").value(1))
+                .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString(noFlatYet.getEmail())));
+
+        mockMvc.perform(get("/api/flats/mine").cookie(sessionCookie(matching)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flatNumber").value("A-101"));
+
+        // Re-running is a no-op for what's already matched — matchedCount drops to 0, the same
+        // outstanding issue is reported again rather than duplicated or hidden.
+        mockMvc.perform(post("/api/flats/sync-residents").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchedCount").value(0))
+                .andExpect(jsonPath("$.issues.length()").value(1));
     }
 }

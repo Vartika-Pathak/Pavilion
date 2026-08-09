@@ -6,6 +6,7 @@ import com.pavilion.api.dto.MastersDtos.FlatChangeRequestStatusRequest;
 import com.pavilion.api.dto.MastersDtos.FlatDirectoryEntry;
 import com.pavilion.api.dto.MastersDtos.FlatRequest;
 import com.pavilion.api.dto.MastersDtos.FlatResponse;
+import com.pavilion.api.dto.MastersDtos.SyncFlatResidentsResult;
 import com.pavilion.api.entity.Building;
 import com.pavilion.api.entity.Flat;
 import com.pavilion.api.entity.FlatChangeRequest;
@@ -22,6 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -173,6 +175,52 @@ public class FlatController {
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Change request not found"));
         request.setStatus(body.status());
         return FlatChangeRequestResponse.from(flatChangeRequestRepository.save(request));
+    }
+
+    // For accounts that existed before Flat Resident shipped — matches each resident's profile
+    // flatNumber against an existing, currently-unassigned Flat with the same number. Repeatable:
+    // already-linked flats are left untouched, so running this again after fixing an "issue" only
+    // picks up what's still outstanding.
+    @PostMapping("/sync-residents")
+    public SyncFlatResidentsResult syncResidents() {
+        List<Flat> flats = flatRepository.findAll();
+        Map<String, List<Flat>> flatsByNumber = new HashMap<>();
+        for (Flat flat : flats) {
+            flatsByNumber.computeIfAbsent(normalizeFlatNumber(flat.getFlatNumber()), k -> new ArrayList<>()).add(flat);
+        }
+
+        int matched = 0;
+        List<String> issues = new ArrayList<>();
+
+        for (User resident : userRepository.findAll()) {
+            if (!"resident".equals(resident.getRole())) {
+                continue;
+            }
+            List<Flat> candidates = flatsByNumber.getOrDefault(normalizeFlatNumber(resident.getFlatNumber()), List.of());
+            if (candidates.isEmpty()) {
+                issues.add(resident.getName() + " (" + resident.getEmail() + "): no flat numbered \""
+                        + resident.getFlatNumber() + "\" exists yet — create it in Flat Resident first");
+            } else if (candidates.size() > 1) {
+                issues.add(resident.getName() + " (" + resident.getEmail() + "): flat number \""
+                        + resident.getFlatNumber() + "\" matches more than one flat — assign manually");
+            } else {
+                Flat flat = candidates.get(0);
+                if (flat.getResidentId() == null) {
+                    flat.setResidentId(resident.getId());
+                    flatRepository.save(flat);
+                    matched++;
+                } else if (!flat.getResidentId().equals(resident.getId())) {
+                    issues.add(resident.getName() + " (" + resident.getEmail() + "): flat \"" + resident.getFlatNumber()
+                            + "\" is already assigned to someone else — check for a mismatch");
+                }
+            }
+        }
+
+        return new SyncFlatResidentsResult(matched, issues);
+    }
+
+    private static String normalizeFlatNumber(String flatNumber) {
+        return flatNumber == null ? "" : flatNumber.trim().toUpperCase();
     }
 
     private Map<Long, String> buildingNames() {
