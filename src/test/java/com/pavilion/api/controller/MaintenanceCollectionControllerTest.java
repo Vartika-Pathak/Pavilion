@@ -8,9 +8,21 @@ import com.pavilion.api.entity.User;
 import com.pavilion.api.repository.BuildingRepository;
 import com.pavilion.api.repository.FlatRepository;
 import com.pavilion.api.repository.MaintenanceRateRepository;
+import com.pavilion.api.service.StripeService;
+import com.pavilion.api.service.StripeService.StripeSessionResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
 
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -18,6 +30,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class MaintenanceCollectionControllerTest extends AbstractIntegrationTest {
+
+    @MockBean
+    private StripeService stripeService;
 
     @Autowired
     private BuildingRepository buildingRepository;
@@ -39,6 +54,18 @@ class MaintenanceCollectionControllerTest extends AbstractIntegrationTest {
         flat.setOccupied(true);
         flat.setOwnershipType("owner");
         return flatRepository.save(flat);
+    }
+
+    private void assignResident(Flat flat, User resident) {
+        flat.setResidentId(resident.getId());
+        flatRepository.save(flat);
+    }
+
+    private MaintenanceRate setRate(String flatType, long monthlyAmountPaise) {
+        MaintenanceRate rate = new MaintenanceRate();
+        rate.setFlatType(flatType);
+        rate.setMonthlyAmountPaise(monthlyAmountPaise);
+        return maintenanceRateRepository.save(rate);
     }
 
     @Test
@@ -144,5 +171,140 @@ class MaintenanceCollectionControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(post("/api/maintenance-collections/backfill").cookie(sessionCookie(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.monthsBackfilled.length()").value(3));
+    }
+
+    @Test
+    void myDueRequiresAFlatToBeAssigned() throws Exception {
+        User resident = createUser("resident");
+        mockMvc.perform(get("/api/maintenance-collections/mine/due").cookie(sessionCookie(resident)))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void myDueReflectsTheRateMinusWhatsAlreadyCollected() throws Exception {
+        User resident = createUser("resident");
+        Flat flat = createFlat("A-1", "2bhk");
+        assignResident(flat, resident);
+        setRate("2bhk", 500000L);
+
+        mockMvc.perform(get("/api/maintenance-collections/mine/due").cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.expectedAmountPaise").value(500000))
+                .andExpect(jsonPath("$.collectedAmountPaise").value(0))
+                .andExpect(jsonPath("$.dueAmountPaise").value(500000));
+    }
+
+    @Test
+    void payingWithNothingDueReturnsNothingDueWithoutTouchingStripe() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+        Flat flat = createFlat("A-1", "2bhk");
+        assignResident(flat, resident);
+        setRate("2bhk", 500000L);
+
+        String month = java.time.LocalDate.now(java.time.ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+        mockMvc.perform(post("/api/maintenance-collections")
+                .cookie(sessionCookie(admin))
+                .contentType("application/json")
+                .content("{\"flatId\":" + flat.getId() + ",\"payerName\":\"Resident A\",\"amountPaise\":500000,"
+                        + "\"paymentDate\":\"2026-08-05\",\"paymentMode\":\"cash\",\"forMonth\":\"" + month + "\"}"));
+
+        mockMvc.perform(post("/api/maintenance-collections/pay").cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("nothing_due"));
+
+        verify(stripeService, never()).createMaintenanceCheckoutSession(anyLong(), anyString(), anyString(), anyLong(), anyString(), anyString());
+    }
+
+    @Test
+    void payingWithADueStartsAStripeCheckoutInInr() throws Exception {
+        User resident = createUser("resident");
+        Flat flat = createFlat("A-1", "2bhk");
+        assignResident(flat, resident);
+        setRate("2bhk", 500000L);
+
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(stripeService.createMaintenanceCheckoutSession(eq(500000L), anyString(), eq("A-1"), eq(flat.getId()), anyString(), anyString()))
+                .thenReturn(new StripeService.CheckoutSessionResult("cs_test_1", "https://checkout.stripe.com/pay/cs_test_1"));
+
+        mockMvc.perform(post("/api/maintenance-collections/pay").cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("requires_payment"))
+                .andExpect(jsonPath("$.checkoutUrl").value("https://checkout.stripe.com/pay/cs_test_1"));
+    }
+
+    @Test
+    void confirmCreatesAnOnlineCollectionOnSuccessfulPayment() throws Exception {
+        User resident = createUser("resident");
+        Flat flat = createFlat("A-1", "2bhk");
+        assignResident(flat, resident);
+        setRate("2bhk", 500000L);
+        String month = java.time.LocalDate.now(java.time.ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(stripeService.retrieveSession("cs_test_1")).thenReturn(new StripeSessionResult(
+                "paid", "pi_1", 500000L, Map.of("flatId", String.valueOf(flat.getId()), "forMonth", month)));
+
+        mockMvc.perform(post("/api/maintenance-collections/confirm")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"sessionId\":\"cs_test_1\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.paymentMode").value("online"))
+                .andExpect(jsonPath("$.amountPaise").value(500000))
+                .andExpect(jsonPath("$.forMonth").value(month));
+
+        verify(stripeService, never()).refund(anyString());
+    }
+
+    @Test
+    void confirmRefundsWhenTheMonthWasAlreadyPaidWhilePaying() throws Exception {
+        User admin = createUser("admin");
+        User resident = createUser("resident");
+        Flat flat = createFlat("A-1", "2bhk");
+        assignResident(flat, resident);
+        setRate("2bhk", 500000L);
+        String month = java.time.LocalDate.now(java.time.ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+
+        mockMvc.perform(post("/api/maintenance-collections")
+                .cookie(sessionCookie(admin))
+                .contentType("application/json")
+                .content("{\"flatId\":" + flat.getId() + ",\"payerName\":\"Resident A\",\"amountPaise\":500000,"
+                        + "\"paymentDate\":\"2026-08-05\",\"paymentMode\":\"cash\",\"forMonth\":\"" + month + "\"}"));
+
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(stripeService.retrieveSession("cs_test_1")).thenReturn(new StripeSessionResult(
+                "paid", "pi_1", 500000L, Map.of("flatId", String.valueOf(flat.getId()), "forMonth", month)));
+
+        mockMvc.perform(post("/api/maintenance-collections/confirm")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"sessionId\":\"cs_test_1\"}"))
+                .andExpect(status().isConflict());
+
+        verify(stripeService, times(1)).refund("pi_1");
+    }
+
+    @Test
+    void confirmingTheSameSessionTwiceDoesNotDoubleCharge() throws Exception {
+        User resident = createUser("resident");
+        Flat flat = createFlat("A-1", "2bhk");
+        assignResident(flat, resident);
+        setRate("2bhk", 500000L);
+        String month = java.time.LocalDate.now(java.time.ZoneOffset.UTC).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM"));
+
+        when(stripeService.isConfigured()).thenReturn(true);
+        when(stripeService.retrieveSession("cs_test_1")).thenReturn(new StripeSessionResult(
+                "paid", "pi_1", 500000L, Map.of("flatId", String.valueOf(flat.getId()), "forMonth", month)));
+
+        String content = "{\"sessionId\":\"cs_test_1\"}";
+        mockMvc.perform(post("/api/maintenance-collections/confirm").cookie(sessionCookie(resident))
+                        .contentType("application/json").content(content))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/maintenance-collections/confirm").cookie(sessionCookie(resident))
+                        .contentType("application/json").content(content))
+                .andExpect(status().isOk());
+
+        verify(stripeService, times(1)).retrieveSession("cs_test_1");
     }
 }

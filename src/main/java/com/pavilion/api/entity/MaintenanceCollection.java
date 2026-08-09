@@ -38,6 +38,11 @@ public class MaintenanceCollection {
     @Column
     private String notes;
 
+    // Set only for resident-paid collections (paymentMode "online") — null for anything the
+    // admin entered by hand. Used to make payment confirmation idempotent.
+    @Column(name = "stripe_session_id")
+    private String stripeSessionId;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -111,5 +116,13 @@ public class MaintenanceCollection {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public String getStripeSessionId() {
+        return stripeSessionId;
+    }
+
+    public void setStripeSessionId(String stripeSessionId) {
+        this.stripeSessionId = stripeSessionId;
     }
 }

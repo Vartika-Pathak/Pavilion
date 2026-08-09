@@ -1,0 +1,3 @@
+ALTER TABLE maintenance_collections ADD COLUMN stripe_session_id TEXT;
+
+CREATE INDEX idx_maintenance_collections_stripe_session_id ON maintenance_collections(stripe_session_id);

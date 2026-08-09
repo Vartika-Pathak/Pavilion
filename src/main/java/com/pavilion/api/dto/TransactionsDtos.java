@@ -166,11 +166,23 @@ public class TransactionsDtos {
             @Min(value = 1, message = "Amount must be at least 1") Long amountPaise,
             @NotBlank(message = "Payment date is required") String paymentDate,
             @NotBlank(message = "Payment mode is required")
-            @Pattern(regexp = "^(cash|cheque|upi|bank_transfer)$", message = "paymentMode must be cash, cheque, upi, or bank_transfer")
+            @Pattern(regexp = "^(cash|cheque|upi|bank_transfer|online)$", message = "paymentMode must be cash, cheque, upi, bank_transfer, or online")
             String paymentMode,
             @NotBlank(message = "For month is required") String forMonth,
             String referenceNumber,
             String notes) {
+    }
+
+    public record MyMaintenanceDueResponse(
+            String forMonth, String buildingName, String flatNumber,
+            long expectedAmountPaise, long collectedAmountPaise, long dueAmountPaise) {
+    }
+
+    public record PayMaintenanceResult(String status, String checkoutUrl) {
+    }
+
+    public record ConfirmMaintenancePaymentRequest(
+            @NotBlank(message = "Session id is required") String sessionId) {
     }
 
     public record BackfillMaintenanceCollectionsRequest(

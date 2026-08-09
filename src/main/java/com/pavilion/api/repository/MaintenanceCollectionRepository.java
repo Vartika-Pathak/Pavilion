@@ -4,6 +4,7 @@ import com.pavilion.api.entity.MaintenanceCollection;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import java.util.List;
+import java.util.Optional;
 
 public interface MaintenanceCollectionRepository extends JpaRepository<MaintenanceCollection, Long> {
     List<MaintenanceCollection> findByFlatId(Long flatId);
@@ -13,6 +14,8 @@ public interface MaintenanceCollectionRepository extends JpaRepository<Maintenan
     List<MaintenanceCollection> findByFlatIdAndForMonth(Long flatId, String forMonth);
 
     boolean existsByFlatIdAndForMonth(Long flatId, String forMonth);
+
+    Optional<MaintenanceCollection> findByStripeSessionId(String stripeSessionId);
 
     @Query("select coalesce(sum(c.amountPaise), 0) from MaintenanceCollection c where c.forMonth = :forMonth")
     long sumAmountPaiseByForMonth(String forMonth);

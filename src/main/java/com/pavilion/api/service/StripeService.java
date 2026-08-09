@@ -72,6 +72,38 @@ public class StripeService {
         }
     }
 
+    // Amenities use USD (a faithful port of the Node original's placeholder pricing) — maintenance
+    // dues are stored in paise, which is unambiguously INR, so this charges in INR instead.
+    // Stripe's unit_amount for INR is already the smallest unit (paise), same as our own storage,
+    // so no conversion is needed.
+    public CheckoutSessionResult createMaintenanceCheckoutSession(
+            long amountPaise, String buildingName, String flatNumber, Long flatId, String forMonth, String origin) {
+        try {
+            SessionCreateParams params = SessionCreateParams.builder()
+                    .setMode(SessionCreateParams.Mode.PAYMENT)
+                    .addLineItem(SessionCreateParams.LineItem.builder()
+                            .setQuantity(1L)
+                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                                    .setCurrency("inr")
+                                    .setUnitAmount(amountPaise)
+                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                            .setName("Maintenance — " + flatNumber + ", " + buildingName + " (" + forMonth + ")")
+                                            .build())
+                                    .build())
+                            .build())
+                    .putMetadata("flatId", String.valueOf(flatId))
+                    .putMetadata("forMonth", forMonth)
+                    .setSuccessUrl(origin + "/pay-maintenance?session_id={CHECKOUT_SESSION_ID}")
+                    .setCancelUrl(origin + "/pay-maintenance")
+                    .build();
+            Session session = Session.create(params);
+            return new CheckoutSessionResult(session.getId(), session.getUrl());
+        } catch (StripeException e) {
+            log.error("Stripe maintenance checkout session creation failed", e);
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Couldn't start payment — please try again");
+        }
+    }
+
     public StripeSessionResult retrieveSession(String sessionId) {
         try {
             Session session = Session.retrieve(sessionId);
