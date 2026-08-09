@@ -107,12 +107,13 @@ public class MastersDtos {
     }
 
     // A one-time (but safely re-runnable) catch-up for accounts that existed before flats could
-    // be assigned to a resident — matches each resident's free-text profile flatNumber against an
-    // existing, currently-unassigned Flat with the same number. Never overwrites an assignment
-    // that's already set, and never creates new Flat/Building rows (ambiguous which building a
-    // bare flat number belongs to) — those cases are surfaced in issues for the admin to resolve
-    // by hand in Flat Resident.
-    public record SyncFlatResidentsResult(int matchedCount, List<String> issues) {
+    // be assigned to a resident. For each resident, matches their free-text profile flatNumber
+    // against an existing Flat first; only if none exists does it create one (and its Building,
+    // from the flatNumber's letter prefix — "A-101" -> building "A"), since flatType/ownershipType
+    // can't be inferred from a bare number and are set to placeholder defaults the admin should
+    // review. Never overwrites an assignment that's already set. Ambiguous/unparseable cases are
+    // surfaced in issues for the admin to resolve by hand in Flat Resident.
+    public record SyncFlatResidentsResult(int matchedCount, int createdCount, List<String> issues) {
     }
 
     public record ExpenseCategoryResponse(Long id, String name, Integer gstSlabPercent) {

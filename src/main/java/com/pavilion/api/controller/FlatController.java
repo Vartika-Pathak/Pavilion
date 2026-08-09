@@ -27,6 +27,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/flats")
@@ -177,10 +179,17 @@ public class FlatController {
         return FlatChangeRequestResponse.from(flatChangeRequestRepository.save(request));
     }
 
+    // Letter-hyphen-digits, e.g. "A-101" — same shape AdminController requires at signup for a
+    // resident's flatNumber. The letter is treated as the building code when creating a flat.
+    private static final Pattern FLAT_NUMBER_PATTERN = Pattern.compile("^([A-Za-z])-([0-9]{1,3})$");
+
     // For accounts that existed before Flat Resident shipped — matches each resident's profile
-    // flatNumber against an existing, currently-unassigned Flat with the same number. Repeatable:
-    // already-linked flats are left untouched, so running this again after fixing an "issue" only
-    // picks up what's still outstanding.
+    // flatNumber against an existing Flat with the same number and links it. If none exists yet,
+    // creates one (and its Building, from the flatNumber's letter prefix) rather than leaving the
+    // resident unassigned, since flatType/ownershipType can't be inferred from a bare number and
+    // are set to placeholder defaults (1bhk, occupied, owner) flagged for the admin to review.
+    // Repeatable: already-linked flats are left untouched, so running this again after fixing an
+    // issue only picks up what's still outstanding.
     @PostMapping("/sync-residents")
     public SyncFlatResidentsResult syncResidents() {
         List<Flat> flats = flatRepository.findAll();
@@ -190,20 +199,23 @@ public class FlatController {
         }
 
         int matched = 0;
+        int created = 0;
         List<String> issues = new ArrayList<>();
 
         for (User resident : userRepository.findAll()) {
             if (!"resident".equals(resident.getRole())) {
                 continue;
             }
-            List<Flat> candidates = flatsByNumber.getOrDefault(normalizeFlatNumber(resident.getFlatNumber()), List.of());
-            if (candidates.isEmpty()) {
-                issues.add(resident.getName() + " (" + resident.getEmail() + "): no flat numbered \""
-                        + resident.getFlatNumber() + "\" exists yet — create it in Flat Resident first");
-            } else if (candidates.size() > 1) {
+            String key = normalizeFlatNumber(resident.getFlatNumber());
+            List<Flat> candidates = flatsByNumber.getOrDefault(key, List.of());
+
+            if (candidates.size() > 1) {
                 issues.add(resident.getName() + " (" + resident.getEmail() + "): flat number \""
                         + resident.getFlatNumber() + "\" matches more than one flat — assign manually");
-            } else {
+                continue;
+            }
+
+            if (candidates.size() == 1) {
                 Flat flat = candidates.get(0);
                 if (flat.getResidentId() == null) {
                     flat.setResidentId(resident.getId());
@@ -213,10 +225,40 @@ public class FlatController {
                     issues.add(resident.getName() + " (" + resident.getEmail() + "): flat \"" + resident.getFlatNumber()
                             + "\" is already assigned to someone else — check for a mismatch");
                 }
+                continue;
             }
+
+            Matcher m = FLAT_NUMBER_PATTERN.matcher(
+                    resident.getFlatNumber() == null ? "" : resident.getFlatNumber().trim());
+            if (!m.matches()) {
+                issues.add(resident.getName() + " (" + resident.getEmail() + "): flat number \""
+                        + resident.getFlatNumber() + "\" doesn't look like letter-hyphen-digits (e.g. A-101) — create it manually");
+                continue;
+            }
+
+            String buildingCode = m.group(1).toUpperCase();
+            Building building = buildingRepository.findByNameIgnoreCase(buildingCode).orElseGet(() -> {
+                Building newBuilding = new Building();
+                newBuilding.setName(buildingCode);
+                newBuilding.setTotalFlats(1);
+                return buildingRepository.save(newBuilding);
+            });
+
+            Flat flat = new Flat();
+            flat.setBuildingId(building.getId());
+            flat.setFlatNumber(resident.getFlatNumber().trim());
+            flat.setFlatType("1bhk");
+            flat.setOccupied(true);
+            flat.setOwnershipType("owner");
+            flat.setResidentId(resident.getId());
+            flat = flatRepository.save(flat);
+            flatsByNumber.computeIfAbsent(key, k -> new ArrayList<>()).add(flat);
+            created++;
+            issues.add(resident.getName() + " (" + resident.getEmail() + "): created flat \"" + resident.getFlatNumber()
+                    + "\" in building \"" + buildingCode + "\" with placeholder type/ownership — review it in Flat Resident");
         }
 
-        return new SyncFlatResidentsResult(matched, issues);
+        return new SyncFlatResidentsResult(matched, created, issues);
     }
 
     private static String normalizeFlatNumber(String flatNumber) {

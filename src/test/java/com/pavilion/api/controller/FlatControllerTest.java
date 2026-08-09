@@ -227,13 +227,13 @@ class FlatControllerTest extends AbstractIntegrationTest {
         flatRepository.save(matchable);
 
         User matching = createResidentWithFlatNumber("A-101");
-        User noFlatYet = createResidentWithFlatNumber("Z-999");
+        User badFormat = createResidentWithFlatNumber("no-flat-number-here");
 
         mockMvc.perform(post("/api/flats/sync-residents").cookie(sessionCookie(admin)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.matchedCount").value(1))
                 .andExpect(jsonPath("$.issues.length()").value(1))
-                .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString(noFlatYet.getEmail())));
+                .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString(badFormat.getEmail())));
 
         mockMvc.perform(get("/api/flats/mine").cookie(sessionCookie(matching)))
                 .andExpect(status().isOk())
@@ -245,5 +245,37 @@ class FlatControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.matchedCount").value(0))
                 .andExpect(jsonPath("$.issues.length()").value(1));
+    }
+
+    @Test
+    void syncResidentsCreatesAMissingFlatAndBuildingFromTheFlatNumber() throws Exception {
+        User admin = createUser("admin");
+        User resident = createResidentWithFlatNumber("Z-999");
+
+        mockMvc.perform(post("/api/flats/sync-residents").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.matchedCount").value(0))
+                .andExpect(jsonPath("$.createdCount").value(1))
+                .andExpect(jsonPath("$.issues.length()").value(1))
+                .andExpect(jsonPath("$.issues[0]").value(org.hamcrest.Matchers.containsString("created flat")));
+
+        mockMvc.perform(get("/api/flats/mine").cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flatNumber").value("Z-999"))
+                .andExpect(jsonPath("$.buildingName").value("Z"))
+                .andExpect(jsonPath("$.flatType").value("1bhk"))
+                .andExpect(jsonPath("$.ownershipType").value("owner"));
+
+        // A second resident under the same letter reuses the building instead of creating another.
+        User secondResident = createResidentWithFlatNumber("Z-500");
+        mockMvc.perform(post("/api/flats/sync-residents").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.createdCount").value(1));
+
+        mockMvc.perform(get("/api/flats/mine").cookie(sessionCookie(secondResident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.buildingName").value("Z"));
+
+        org.assertj.core.api.Assertions.assertThat(buildingRepository.findAll()).hasSize(1);
     }
 }
