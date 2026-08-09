@@ -54,9 +54,12 @@ public class SecurityConfig {
                                 "/api/auth/verification-requests", "/api/auth/login", "/api/auth/logout")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/healthz", "/api/chat/suggestions",
-                                "/api/auth/verification-requests/status", "/api/events", "/api/events/**")
+                                "/api/auth/verification-requests/status", "/api/events", "/api/events/**",
+                                "/api/gallery", "/api/news", "/api/news/**", "/api/resident-meetings",
+                                "/api/members", "/api/members/**", "/api/stats", "/uploads/**")
                         .permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/chat/message").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/chat/message", "/api/contact", "/api/join-requests")
+                        .permitAll()
                         .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated())

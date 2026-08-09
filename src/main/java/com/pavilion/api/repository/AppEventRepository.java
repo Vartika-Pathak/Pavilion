@@ -9,4 +9,6 @@ public interface AppEventRepository extends JpaRepository<AppEvent, Long> {
     List<AppEvent> findAllByOrderByEventDateAsc();
 
     List<AppEvent> findTop5ByEventDateGreaterThanEqualOrderByEventDateAsc(Instant from);
+
+    long countByEventDateGreaterThanEqual(Instant from);
 }
