@@ -31,9 +31,14 @@ public class ResidentRequestsDtos {
 
     public record ComplaintStatusRequest(
             @NotBlank(message = "Status is required")
-            @Pattern(regexp = "^(open|in_progress|resolved)$", message = "status must be open, in_progress, or resolved")
+            @Pattern(regexp = "^(open|in_progress|resolved|closed)$", message = "status must be open, in_progress, resolved, or closed")
             String status,
             String resolutionNote) {
+    }
+
+    // Optional — the resident explaining what's still wrong when they're not satisfied with the
+    // resolution, folded into resolutionNote so there's one place to read the whole back-and-forth.
+    public record ComplaintReopenRequest(String note) {
     }
 
     // ---- Maintenance Requests ----

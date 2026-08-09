@@ -1,5 +1,6 @@
 package com.pavilion.api.controller;
 
+import com.pavilion.api.dto.ResidentRequestsDtos.ComplaintReopenRequest;
 import com.pavilion.api.dto.ResidentRequestsDtos.ComplaintRequest;
 import com.pavilion.api.dto.ResidentRequestsDtos.ComplaintResponse;
 import com.pavilion.api.dto.ResidentRequestsDtos.ComplaintStatusRequest;
@@ -63,5 +64,43 @@ public class ComplaintController {
         complaint.setUpdatedAt(Instant.now());
 
         return ComplaintResponse.from(complaintRepository.save(complaint));
+    }
+
+    // Closes the loop from the resident's side: only the complaint's own resident can confirm or
+    // reject a resolution, and only while it's actually sitting in "resolved" — admin/guard still
+    // own every other transition via updateStatus above.
+    @PostMapping("/{id}/confirm")
+    public ComplaintResponse confirmResolved(@PathVariable Long id, @AuthenticationPrincipal User user) {
+        Complaint complaint = ownedResolvedComplaint(id, user);
+        complaint.setStatus("closed");
+        complaint.setUpdatedAt(Instant.now());
+        return ComplaintResponse.from(complaintRepository.save(complaint));
+    }
+
+    @PostMapping("/{id}/reopen")
+    public ComplaintResponse reopen(
+            @PathVariable Long id, @AuthenticationPrincipal User user,
+            @RequestBody(required = false) ComplaintReopenRequest body) {
+        Complaint complaint = ownedResolvedComplaint(id, user);
+        complaint.setStatus("open");
+        if (body != null && body.note() != null && !body.note().isBlank()) {
+            String existing = complaint.getResolutionNote();
+            complaint.setResolutionNote(
+                    (existing != null && !existing.isBlank() ? existing + "\n\n" : "") + "Resident wasn't satisfied: " + body.note());
+        }
+        complaint.setUpdatedAt(Instant.now());
+        return ComplaintResponse.from(complaintRepository.save(complaint));
+    }
+
+    private Complaint ownedResolvedComplaint(Long id, User user) {
+        Complaint complaint = complaintRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Complaint not found"));
+        if (!user.getId().equals(complaint.getResidentId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This isn't your complaint");
+        }
+        if (!"resolved".equals(complaint.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only a resolved complaint can be confirmed or reopened");
+        }
+        return complaint;
     }
 }
