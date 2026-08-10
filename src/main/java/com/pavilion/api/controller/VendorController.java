@@ -52,6 +52,7 @@ public class VendorController {
         vendor.setAddress(body.address());
         vendor.setGstNumber(body.gstNumber());
         vendor.setOpeningBalancePaise(body.openingBalancePaise() != null ? body.openingBalancePaise() : 0L);
+        vendor.setCategory(body.category() == null || body.category().isBlank() ? null : body.category());
     }
 
     @DeleteMapping("/{id}")

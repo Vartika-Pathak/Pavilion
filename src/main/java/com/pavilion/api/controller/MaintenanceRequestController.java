@@ -4,8 +4,10 @@ import com.pavilion.api.dto.ResidentRequestsDtos.MaintenanceRequestResponse;
 import com.pavilion.api.dto.ResidentRequestsDtos.MaintenanceStatusRequest;
 import com.pavilion.api.entity.MaintenanceRequest;
 import com.pavilion.api.entity.User;
+import com.pavilion.api.entity.Vendor;
 import com.pavilion.api.exception.ApiException;
 import com.pavilion.api.repository.MaintenanceRequestRepository;
+import com.pavilion.api.repository.VendorRepository;
 import com.pavilion.api.service.FileStorageService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -26,11 +28,14 @@ public class MaintenanceRequestController {
     private static final Set<String> CATEGORIES = Set.of("plumbing", "electrical", "appliance", "structural", "other");
 
     private final MaintenanceRequestRepository maintenanceRequestRepository;
+    private final VendorRepository vendorRepository;
     private final FileStorageService fileStorageService;
 
     public MaintenanceRequestController(
-            MaintenanceRequestRepository maintenanceRequestRepository, FileStorageService fileStorageService) {
+            MaintenanceRequestRepository maintenanceRequestRepository, VendorRepository vendorRepository,
+            FileStorageService fileStorageService) {
         this.maintenanceRequestRepository = maintenanceRequestRepository;
+        this.vendorRepository = vendorRepository;
         this.fileStorageService = fileStorageService;
     }
 
@@ -86,9 +91,56 @@ public class MaintenanceRequestController {
         MaintenanceRequest request = maintenanceRequestRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Request not found"));
 
+        // Moving to "in_progress" requires assigning a vendor whose category matches the request's
+        // — every other transition leaves whatever vendor is already on the request untouched.
+        if ("in_progress".equals(body.status())) {
+            if (body.vendorId() == null) {
+                throw new ApiException(HttpStatus.BAD_REQUEST, "A vendor must be assigned to move a request to in_progress");
+            }
+            Vendor vendor = vendorRepository.findById(body.vendorId())
+                    .orElseThrow(() -> new ApiException(HttpStatus.BAD_REQUEST, "Vendor not found"));
+            if (!request.getCategory().equals(vendor.getCategory())) {
+                throw new ApiException(HttpStatus.BAD_REQUEST,
+                        "That vendor isn't tagged for " + request.getCategory() + " work");
+            }
+            request.setVendorId(vendor.getId());
+            request.setVendorName(vendor.getName());
+        }
+
         request.setStatus(body.status());
         request.setUpdatedAt(Instant.now());
 
         return MaintenanceRequestResponse.from(maintenanceRequestRepository.save(request));
+    }
+
+    // Closes the loop from the resident's side, mirroring ComplaintController's confirm/reopen —
+    // only the request's own resident can confirm or reject, and only while it's "resolved".
+    // id is a query param for the same Render-rewrite reason as updateStatus above.
+    @PostMapping("/confirm")
+    public MaintenanceRequestResponse confirmResolved(@RequestParam Long id, @AuthenticationPrincipal User user) {
+        MaintenanceRequest request = ownedResolvedRequest(id, user);
+        request.setStatus("closed");
+        request.setUpdatedAt(Instant.now());
+        return MaintenanceRequestResponse.from(maintenanceRequestRepository.save(request));
+    }
+
+    @PostMapping("/reopen")
+    public MaintenanceRequestResponse reopen(@RequestParam Long id, @AuthenticationPrincipal User user) {
+        MaintenanceRequest request = ownedResolvedRequest(id, user);
+        request.setStatus("open");
+        request.setUpdatedAt(Instant.now());
+        return MaintenanceRequestResponse.from(maintenanceRequestRepository.save(request));
+    }
+
+    private MaintenanceRequest ownedResolvedRequest(Long id, User user) {
+        MaintenanceRequest request = maintenanceRequestRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Request not found"));
+        if (!user.getId().equals(request.getResidentId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This isn't your request");
+        }
+        if (!"resolved".equals(request.getStatus())) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "Only a resolved request can be confirmed or reopened");
+        }
+        return request;
     }
 }

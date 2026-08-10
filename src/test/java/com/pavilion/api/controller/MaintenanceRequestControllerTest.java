@@ -2,7 +2,10 @@ package com.pavilion.api.controller;
 
 import com.pavilion.api.AbstractIntegrationTest;
 import com.pavilion.api.entity.User;
+import com.pavilion.api.entity.Vendor;
+import com.pavilion.api.repository.VendorRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.mock.web.MockMultipartFile;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -12,6 +15,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class MaintenanceRequestControllerTest extends AbstractIntegrationTest {
+
+    @Autowired
+    private VendorRepository vendorRepository;
+
+    private Vendor createVendor(String name, String category) {
+        Vendor vendor = new Vendor();
+        vendor.setName(name);
+        vendor.setContactPersonName("Contact Person");
+        vendor.setContactNumber("9876543210");
+        vendor.setCategory(category);
+        return vendorRepository.save(vendor);
+    }
 
     @Test
     void listRequiresAuthentication() throws Exception {
@@ -151,6 +166,28 @@ class MaintenanceRequestControllerTest extends AbstractIntegrationTest {
     void guardCanUpdateStatus() throws Exception {
         User resident = createUser("resident");
         User guard = createUser("guard");
+        Vendor plumber = createVendor("Ravi Plumbing", "plumbing");
+        String response = mockMvc.perform(multipart("/api/maintenance")
+                        .cookie(sessionCookie(resident))
+                        .param("category", "plumbing")
+                        .param("description", "Leak"))
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"status\":\"in_progress\",\"vendorId\":" + plumber.getId() + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("in_progress"))
+                .andExpect(jsonPath("$.vendorId").value(plumber.getId()))
+                .andExpect(jsonPath("$.vendorName").value("Ravi Plumbing"));
+    }
+
+    @Test
+    void movingToInProgressWithoutAVendorFails() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
         String response = mockMvc.perform(multipart("/api/maintenance")
                         .cookie(sessionCookie(resident))
                         .param("category", "plumbing")
@@ -162,7 +199,99 @@ class MaintenanceRequestControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(guard))
                         .contentType("application/json")
                         .content("{\"status\":\"in_progress\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void movingToInProgressWithAMismatchedVendorCategoryFails() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+        Vendor electrician = createVendor("Spark Electric", "electrical");
+        String response = mockMvc.perform(multipart("/api/maintenance")
+                        .cookie(sessionCookie(resident))
+                        .param("category", "plumbing")
+                        .param("description", "Leak"))
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"status\":\"in_progress\",\"vendorId\":" + electrician.getId() + "}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void residentCanConfirmAResolvedRequestWhichClosesIt() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+        String response = mockMvc.perform(multipart("/api/maintenance")
+                        .cookie(sessionCookie(resident))
+                        .param("category", "plumbing")
+                        .param("description", "Leak"))
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
+                .cookie(sessionCookie(guard))
+                .contentType("application/json")
+                .content("{\"status\":\"resolved\"}"));
+
+        mockMvc.perform(post("/api/maintenance/confirm?id=" + id).cookie(sessionCookie(resident)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("in_progress"));
+                .andExpect(jsonPath("$.status").value("closed"));
+    }
+
+    @Test
+    void residentCanReopenAResolvedRequestTheyAreNotSatisfiedWith() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+        String response = mockMvc.perform(multipart("/api/maintenance")
+                        .cookie(sessionCookie(resident))
+                        .param("category", "plumbing")
+                        .param("description", "Leak"))
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
+                .cookie(sessionCookie(guard))
+                .contentType("application/json")
+                .content("{\"status\":\"resolved\"}"));
+
+        mockMvc.perform(post("/api/maintenance/reopen?id=" + id).cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("open"));
+    }
+
+    @Test
+    void residentCannotConfirmSomeoneElsesRequest() throws Exception {
+        User residentA = createUser("resident");
+        User residentB = createUser("resident");
+        User guard = createUser("guard");
+        String response = mockMvc.perform(multipart("/api/maintenance")
+                        .cookie(sessionCookie(residentA))
+                        .param("category", "plumbing")
+                        .param("description", "Leak"))
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
+                .cookie(sessionCookie(guard))
+                .contentType("application/json")
+                .content("{\"status\":\"resolved\"}"));
+
+        mockMvc.perform(post("/api/maintenance/confirm?id=" + id).cookie(sessionCookie(residentB)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void cannotConfirmARequestThatIsNotResolvedYet() throws Exception {
+        User resident = createUser("resident");
+        String response = mockMvc.perform(multipart("/api/maintenance")
+                        .cookie(sessionCookie(resident))
+                        .param("category", "plumbing")
+                        .param("description", "Leak"))
+                .andReturn().getResponse().getContentAsString();
+        Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
+
+        mockMvc.perform(post("/api/maintenance/confirm?id=" + id).cookie(sessionCookie(resident)))
+                .andExpect(status().isBadRequest());
     }
 }

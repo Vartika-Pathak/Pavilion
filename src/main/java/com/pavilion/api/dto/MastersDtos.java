@@ -132,11 +132,11 @@ public class MastersDtos {
 
     public record VendorResponse(
             Long id, String name, String contactPersonName, String contactNumber,
-            String address, String gstNumber, Long openingBalancePaise) {
+            String address, String gstNumber, Long openingBalancePaise, String category) {
         public static VendorResponse from(Vendor vendor) {
             return new VendorResponse(
                     vendor.getId(), vendor.getName(), vendor.getContactPersonName(), vendor.getContactNumber(),
-                    vendor.getAddress(), vendor.getGstNumber(), vendor.getOpeningBalancePaise());
+                    vendor.getAddress(), vendor.getGstNumber(), vendor.getOpeningBalancePaise(), vendor.getCategory());
         }
     }
 
@@ -146,6 +146,9 @@ public class MastersDtos {
             @NotBlank(message = "Contact number is required") String contactNumber,
             String address,
             String gstNumber,
-            @Min(value = 0, message = "Opening balance can't be negative") Long openingBalancePaise) {
+            @Min(value = 0, message = "Opening balance can't be negative") Long openingBalancePaise,
+            @Pattern(regexp = "^(plumbing|electrical|appliance|structural|other)?$",
+                    message = "category must be one of plumbing, electrical, appliance, structural, other")
+            String category) {
     }
 }

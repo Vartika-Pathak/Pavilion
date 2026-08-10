@@ -32,9 +32,17 @@ public class MaintenanceRequest {
     @Column(name = "photo_urls", nullable = false)
     private List<String> photoUrls = List.of();
 
-    // One of "open", "in_progress", "resolved".
+    // One of "open", "in_progress", "resolved", "closed".
     @Column(nullable = false)
     private String status = "open";
+
+    @Column(name = "vendor_id")
+    private Long vendorId;
+
+    // Denormalized so the assignment stays visible even if the vendor is later renamed or deleted
+    // — same pattern as residentName/residentFlatNumber above.
+    @Column(name = "vendor_name")
+    private String vendorName;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
@@ -100,6 +108,22 @@ public class MaintenanceRequest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public Long getVendorId() {
+        return vendorId;
+    }
+
+    public void setVendorId(Long vendorId) {
+        this.vendorId = vendorId;
+    }
+
+    public String getVendorName() {
+        return vendorName;
+    }
+
+    public void setVendorName(String vendorName) {
+        this.vendorName = vendorName;
     }
 
     public Instant getCreatedAt() {

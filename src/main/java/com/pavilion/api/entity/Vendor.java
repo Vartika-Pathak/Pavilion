@@ -25,6 +25,12 @@ public class Vendor {
     @Column(name = "gst_number")
     private String gstNumber;
 
+    // One of "plumbing", "electrical", "appliance", "structural", "other", or null for a vendor
+    // not tied to a maintenance category (e.g. a housekeeping or billing-only vendor). Used to
+    // restrict which vendors can be assigned to a maintenance request of a given category.
+    @Column
+    private String category;
+
     // Smallest currency unit (paise), matching the integer-money convention used elsewhere.
     @Column(name = "opening_balance_paise", nullable = false)
     private Long openingBalancePaise = 0L;
@@ -71,6 +77,14 @@ public class Vendor {
 
     public void setGstNumber(String gstNumber) {
         this.gstNumber = gstNumber;
+    }
+
+    public String getCategory() {
+        return category;
+    }
+
+    public void setCategory(String category) {
+        this.category = category;
     }
 
     public Long getOpeningBalancePaise() {

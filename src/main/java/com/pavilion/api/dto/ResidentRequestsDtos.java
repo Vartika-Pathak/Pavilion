@@ -45,17 +45,21 @@ public class ResidentRequestsDtos {
 
     public record MaintenanceRequestResponse(
             Long id, String category, String description, List<String> photoUrls, String status,
-            String residentName, String residentFlatNumber, Instant createdAt) {
+            String residentName, String residentFlatNumber, Long vendorId, String vendorName, Instant createdAt) {
         public static MaintenanceRequestResponse from(MaintenanceRequest request) {
             return new MaintenanceRequestResponse(
                     request.getId(), request.getCategory(), request.getDescription(), request.getPhotoUrls(),
-                    request.getStatus(), request.getResidentName(), request.getResidentFlatNumber(), request.getCreatedAt());
+                    request.getStatus(), request.getResidentName(), request.getResidentFlatNumber(),
+                    request.getVendorId(), request.getVendorName(), request.getCreatedAt());
         }
     }
 
     public record MaintenanceStatusRequest(
             @NotBlank(message = "Status is required")
-            @Pattern(regexp = "^(open|in_progress|resolved)$", message = "status must be open, in_progress, or resolved")
-            String status) {
+            @Pattern(regexp = "^(open|in_progress|resolved|closed)$", message = "status must be open, in_progress, resolved, or closed")
+            String status,
+            // Required (and validated against the request's category) only when status is
+            // "in_progress" — see MaintenanceRequestController.updateStatus.
+            Long vendorId) {
     }
 }
