@@ -77,9 +77,12 @@ public class MaintenanceRequestController {
         return ResponseEntity.status(HttpStatus.CREATED).body(MaintenanceRequestResponse.from(request));
     }
 
-    @PostMapping("/{id}/status")
+    // id is a query param rather than a path variable so the Render static-site rewrite rule for
+    // this route can be an exact-match proxy (no wildcard, no :splat) — see the /api/uploads
+    // endpoint for the same fix and the reasoning behind it.
+    @PostMapping("/status")
     @PreAuthorize("hasAnyRole('GUARD', 'ADMIN')")
-    public MaintenanceRequestResponse updateStatus(@PathVariable Long id, @Valid @RequestBody MaintenanceStatusRequest body) {
+    public MaintenanceRequestResponse updateStatus(@RequestParam Long id, @Valid @RequestBody MaintenanceStatusRequest body) {
         MaintenanceRequest request = maintenanceRequestRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Request not found"));
 

@@ -140,7 +140,7 @@ class MaintenanceRequestControllerTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
 
-        mockMvc.perform(post("/api/maintenance/" + id + "/status")
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("{\"status\":\"resolved\"}"))
@@ -158,7 +158,7 @@ class MaintenanceRequestControllerTest extends AbstractIntegrationTest {
                 .andReturn().getResponse().getContentAsString();
         Number id = com.jayway.jsonpath.JsonPath.read(response, "$.id");
 
-        mockMvc.perform(post("/api/maintenance/" + id + "/status")
+        mockMvc.perform(post("/api/maintenance/status?id=" + id)
                         .cookie(sessionCookie(guard))
                         .contentType("application/json")
                         .content("{\"status\":\"in_progress\"}"))
