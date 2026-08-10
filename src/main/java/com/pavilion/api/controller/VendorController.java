@@ -24,7 +24,10 @@ public class VendorController {
         this.vendorRepository = vendorRepository;
     }
 
+    // Guards also need this to pick a vendor when moving a maintenance request to in_progress —
+    // everything else here (create/update/delete financial details) stays admin-only.
     @GetMapping
+    @PreAuthorize("hasAnyRole('GUARD', 'ADMIN')")
     public List<VendorResponse> listVendors() {
         return vendorRepository.findAll().stream().map(VendorResponse::from).toList();
     }

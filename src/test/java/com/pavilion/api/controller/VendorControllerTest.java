@@ -40,6 +40,22 @@ class VendorControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void guardCanListVendorsButNotCreateOne() throws Exception {
+        User guard = createUser("guard");
+        createVendor("ABC Housekeeping");
+
+        mockMvc.perform(get("/api/vendors").cookie(sessionCookie(guard)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("ABC Housekeeping"));
+
+        mockMvc.perform(post("/api/vendors")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"name\":\"XYZ\",\"contactPersonName\":\"Ravi\",\"contactNumber\":\"9876543210\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void adminCanCreateAndListVendors() throws Exception {
         User admin = createUser("admin");
 
@@ -82,5 +98,17 @@ class VendorControllerTest extends AbstractIntegrationTest {
 
         mockMvc.perform(delete("/api/vendors/" + vendor.getId()).cookie(sessionCookie(admin)))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void adminCanTagAVendorWithACategory() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/vendors")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Ravi Plumbing\",\"contactPersonName\":\"Ravi\",\"contactNumber\":\"9876543210\",\"category\":\"plumbing\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.category").value("plumbing"));
     }
 }
