@@ -1,8 +1,11 @@
 package com.pavilion.api.controller;
 
 import com.pavilion.api.AbstractIntegrationTest;
+import com.pavilion.api.entity.ParkingPass;
 import com.pavilion.api.entity.User;
+import com.pavilion.api.repository.ParkingPassRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -15,14 +18,38 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     private static final String VALID_BODY =
             "{\"plateNumber\":\"MH12AB1234\",\"vehicleType\":\"car\",\"ownerPhone\":\"9998887771\"}";
 
+    @Autowired
+    private ParkingPassRepository parkingPassRepository;
+
+    private void givePassTo(User resident) {
+        ParkingPass pass = new ParkingPass();
+        pass.setFlatNumber(resident.getFlatNumber());
+        pass.setPurchasedByResidentId(resident.getId());
+        pass.setPurchasedByName(resident.getName());
+        pass.setAmountPaidCents(500000);
+        parkingPassRepository.save(pass);
+    }
+
     @Test
     void listRequiresAuthentication() throws Exception {
         mockMvc.perform(get("/api/vehicles")).andExpect(status().isUnauthorized());
     }
 
     @Test
+    void registeringWithoutAParkingPassFails() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/vehicles")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content(VALID_BODY))
+                .andExpect(status().isPaymentRequired());
+    }
+
+    @Test
     void residentCanRegisterAVehicle() throws Exception {
         User resident = createUser("resident");
+        givePassTo(resident);
 
         mockMvc.perform(post("/api/vehicles")
                         .cookie(sessionCookie(resident))
@@ -38,6 +65,7 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     @Test
     void invalidVehicleTypeFails() throws Exception {
         User resident = createUser("resident");
+        givePassTo(resident);
 
         mockMvc.perform(post("/api/vehicles")
                         .cookie(sessionCookie(resident))
@@ -50,6 +78,7 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     void residentOnlySeesTheirOwnVehicles() throws Exception {
         User residentA = createUser("resident");
         User residentB = createUser("resident");
+        givePassTo(residentA);
 
         mockMvc.perform(post("/api/vehicles").cookie(sessionCookie(residentA)).contentType("application/json").content(VALID_BODY));
         mockMvc.perform(post("/api/vehicles").cookie(sessionCookie(residentB)).contentType("application/json").content(VALID_BODY));
@@ -64,6 +93,9 @@ class VehicleControllerTest extends AbstractIntegrationTest {
         User residentA = createUser("resident");
         User residentB = createUser("resident");
         User guard = createUser("guard");
+        // createUser() always uses flat "A-1", so this pass covers residentB too — matches the
+        // "one purchase per flat" model.
+        givePassTo(residentA);
 
         mockMvc.perform(post("/api/vehicles").cookie(sessionCookie(residentA)).contentType("application/json").content(VALID_BODY));
         mockMvc.perform(post("/api/vehicles").cookie(sessionCookie(residentB)).contentType("application/json").content(VALID_BODY));
@@ -76,6 +108,7 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     @Test
     void residentCanDeleteTheirOwnVehicle() throws Exception {
         User resident = createUser("resident");
+        givePassTo(resident);
         String response = mockMvc.perform(post("/api/vehicles")
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
@@ -91,6 +124,7 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     void residentCannotDeleteSomeoneElsesVehicle() throws Exception {
         User residentA = createUser("resident");
         User residentB = createUser("resident");
+        givePassTo(residentA);
         String response = mockMvc.perform(post("/api/vehicles")
                         .cookie(sessionCookie(residentA))
                         .contentType("application/json")
@@ -106,6 +140,7 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     void adminCanDeleteAnyVehicle() throws Exception {
         User resident = createUser("resident");
         User admin = createUser("admin");
+        givePassTo(resident);
         String response = mockMvc.perform(post("/api/vehicles")
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")

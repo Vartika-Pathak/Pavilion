@@ -5,6 +5,7 @@ import com.pavilion.api.dto.VehicleDtos.VehicleResponse;
 import com.pavilion.api.entity.User;
 import com.pavilion.api.entity.Vehicle;
 import com.pavilion.api.exception.ApiException;
+import com.pavilion.api.repository.ParkingPassRepository;
 import com.pavilion.api.repository.VehicleRepository;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -19,9 +20,11 @@ import java.util.List;
 public class VehicleController {
 
     private final VehicleRepository vehicleRepository;
+    private final ParkingPassRepository parkingPassRepository;
 
-    public VehicleController(VehicleRepository vehicleRepository) {
+    public VehicleController(VehicleRepository vehicleRepository, ParkingPassRepository parkingPassRepository) {
         this.vehicleRepository = vehicleRepository;
+        this.parkingPassRepository = parkingPassRepository;
     }
 
     // Guards and admins see every registered vehicle (for gate lookups); residents only see
@@ -38,6 +41,10 @@ public class VehicleController {
     @PostMapping
     public ResponseEntity<VehicleResponse> registerVehicle(
             @AuthenticationPrincipal User user, @Valid @RequestBody VehicleRequest body) {
+        if (parkingPassRepository.findByFlatNumber(user.getFlatNumber()).isEmpty()) {
+            throw new ApiException(HttpStatus.PAYMENT_REQUIRED, "Buy a parking pass for your flat before registering a vehicle");
+        }
+
         Vehicle vehicle = new Vehicle();
         vehicle.setResidentId(user.getId());
         vehicle.setOwnerName(user.getName());

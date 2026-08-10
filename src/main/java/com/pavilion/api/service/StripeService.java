@@ -104,6 +104,36 @@ public class StripeService {
         }
     }
 
+    // Like the maintenance checkout, this is a one-off INR charge — no bookingDate/slot metadata
+    // since a parking pass isn't tied to a date, just to the flat that bought it.
+    public CheckoutSessionResult createParkingPassCheckoutSession(
+            long amountPaise, String flatNumber, Long residentId, String origin) {
+        try {
+            SessionCreateParams params = SessionCreateParams.builder()
+                    .setMode(SessionCreateParams.Mode.PAYMENT)
+                    .addLineItem(SessionCreateParams.LineItem.builder()
+                            .setQuantity(1L)
+                            .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+                                    .setCurrency("inr")
+                                    .setUnitAmount(amountPaise)
+                                    .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                            .setName("Parking Pass — Flat " + flatNumber)
+                                            .build())
+                                    .build())
+                            .build())
+                    .putMetadata("residentId", String.valueOf(residentId))
+                    .putMetadata("flatNumber", flatNumber)
+                    .setSuccessUrl(origin + "/amenities?parking_session_id={CHECKOUT_SESSION_ID}")
+                    .setCancelUrl(origin + "/amenities")
+                    .build();
+            Session session = Session.create(params);
+            return new CheckoutSessionResult(session.getId(), session.getUrl());
+        } catch (StripeException e) {
+            log.error("Stripe parking pass checkout session creation failed", e);
+            throw new ApiException(HttpStatus.BAD_GATEWAY, "Couldn't start payment — please try again");
+        }
+    }
+
     public StripeSessionResult retrieveSession(String sessionId) {
         try {
             Session session = Session.retrieve(sessionId);
