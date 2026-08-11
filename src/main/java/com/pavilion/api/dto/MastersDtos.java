@@ -29,8 +29,17 @@ public class MastersDtos {
     public record UpdateSocietyInfoRequest(
             @NotBlank(message = "Name is required") String name,
             @NotBlank(message = "Address is required") String address,
-            @NotBlank(message = "Contact number is required") String contactNumber,
+            @NotBlank(message = "Contact number is required")
+            @Pattern(regexp = ValidationPatterns.PHONE_10_DIGIT,
+                    message = "Contact number must be exactly 10 digits, starting with 6-9")
+            String contactNumber,
             @NotBlank(message = "Email is required") String email) {
+
+        public UpdateSocietyInfoRequest {
+            if (contactNumber != null) {
+                contactNumber = contactNumber.trim().replaceAll("[\\s-]", "");
+            }
+        }
     }
 
     public record BuildingResponse(Long id, String name, Integer totalFlats) {
@@ -143,12 +152,21 @@ public class MastersDtos {
     public record VendorRequest(
             @NotBlank(message = "Name is required") String name,
             @NotBlank(message = "Contact person name is required") String contactPersonName,
-            @NotBlank(message = "Contact number is required") String contactNumber,
+            @NotBlank(message = "Contact number is required")
+            @Pattern(regexp = ValidationPatterns.PHONE_10_DIGIT,
+                    message = "Contact number must be exactly 10 digits, starting with 6-9")
+            String contactNumber,
             String address,
             String gstNumber,
             @Min(value = 0, message = "Opening balance can't be negative") Long openingBalancePaise,
             @Pattern(regexp = "^(plumbing|electrical|appliance|structural|other)?$",
                     message = "category must be one of plumbing, electrical, appliance, structural, other")
             String category) {
+
+        public VendorRequest {
+            if (contactNumber != null) {
+                contactNumber = contactNumber.trim().replaceAll("[\\s-]", "");
+            }
+        }
     }
 }

@@ -111,4 +111,27 @@ class VendorControllerTest extends AbstractIntegrationTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.category").value("plumbing"));
     }
+
+    @Test
+    void creatingAVendorRejectsAContactNumberStartingWithZeroThroughFive() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/vendors")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"ABC Housekeeping\",\"contactPersonName\":\"Ravi Kumar\",\"contactNumber\":\"4876543210\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void creatingAVendorNormalizesASpacedOutContactNumber() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/vendors")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"ABC Housekeeping\",\"contactPersonName\":\"Ravi Kumar\",\"contactNumber\":\"98765-43210\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.contactNumber").value("9876543210"));
+    }
 }

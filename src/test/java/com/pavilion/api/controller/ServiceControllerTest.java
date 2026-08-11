@@ -58,4 +58,15 @@ class ServiceControllerTest extends AbstractIntegrationTest {
         mockMvc.perform(delete("/api/services/" + service.getId()).cookie(sessionCookie(admin)))
                 .andExpect(status().isNoContent());
     }
+
+    @Test
+    void creatingAServiceRejectsAContactNumberStartingWithZeroThroughFive() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/services")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Ramesh Plumbing\",\"category\":\"Plumber\",\"contactNumber\":\"0876543210\"}"))
+                .andExpect(status().isBadRequest());
+    }
 }

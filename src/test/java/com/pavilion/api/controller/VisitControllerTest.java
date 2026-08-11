@@ -40,7 +40,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234567"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("pending"))
                 .andExpect(jsonPath("$.otpCode").isNotEmpty());
@@ -73,13 +73,26 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .content("""
                                 {"visitType":"guest","visitorName":"Alex","visitorPhone":"12345"}"""))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("visitorPhone: Mobile number must be exactly 10 digits"));
+                .andExpect(jsonPath("$.error")
+                        .value("visitorPhone: Mobile number must be exactly 10 digits, starting with 6-9"));
 
         mockMvc.perform(post("/api/visits")
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"55512345a"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"95512345a"}"""))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void visitorPhoneCannotStartWithZeroThroughFive() throws Exception {
+        User resident = createUser("resident");
+
+        mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234567"}"""))
                 .andExpect(status().isBadRequest());
     }
 
@@ -184,7 +197,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"5551234567"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567"}"""))
                 .andReturn().getResponse().getContentAsString();
         String otpCode = JsonPath.read(created, "$.otpCode");
         Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();

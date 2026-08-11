@@ -125,6 +125,43 @@ class VehicleControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void anOwnerPhoneStartingWithZeroThroughFiveFails() throws Exception {
+        User resident = createUser("resident");
+        givePassTo(resident);
+
+        mockMvc.perform(post("/api/vehicles")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"plateNumber\":\"MH12AB1234\",\"vehicleType\":\"car\",\"ownerPhone\":\"4998887771\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anOwnerPhoneWithTheWrongLengthFails() throws Exception {
+        User resident = createUser("resident");
+        givePassTo(resident);
+
+        mockMvc.perform(post("/api/vehicles")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"plateNumber\":\"MH12AB1234\",\"vehicleType\":\"car\",\"ownerPhone\":\"99988877\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void anOwnerPhoneWithSpacesIsNormalized() throws Exception {
+        User resident = createUser("resident");
+        givePassTo(resident);
+
+        mockMvc.perform(post("/api/vehicles")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("{\"plateNumber\":\"MH12AB1234\",\"vehicleType\":\"car\",\"ownerPhone\":\"99988 87771\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.ownerPhone").value("9998887771"));
+    }
+
+    @Test
     void residentOnlySeesTheirOwnVehicles() throws Exception {
         User residentA = createUser("resident");
         User residentB = createUser("resident");

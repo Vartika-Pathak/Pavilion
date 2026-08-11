@@ -58,4 +58,27 @@ class SocietyControllerTest extends AbstractIntegrationTest {
                         .content("{\"name\":\"\",\"address\":\"123 Main St\",\"contactNumber\":\"9876543210\",\"email\":\"office@test.com\"}"))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void updateRejectsAContactNumberStartingWithZeroThroughFive() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(put("/api/society-info")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Green Meadows\",\"address\":\"123 Main St\",\"contactNumber\":\"5876543210\",\"email\":\"office@test.com\"}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void updateNormalizesASpacedOutContactNumber() throws Exception {
+        User admin = createUser("admin");
+
+        mockMvc.perform(put("/api/society-info")
+                        .cookie(sessionCookie(admin))
+                        .contentType("application/json")
+                        .content("{\"name\":\"Green Meadows\",\"address\":\"123 Main St\",\"contactNumber\":\"98765 43210\",\"email\":\"office@test.com\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contactNumber").value("9876543210"));
+    }
 }

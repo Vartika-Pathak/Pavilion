@@ -27,14 +27,20 @@ public class VehicleDtos {
             @NotBlank(message = "Vehicle type is required")
             @Pattern(regexp = "^(car|bike|other)$", message = "vehicleType must be car, bike, or other")
             String vehicleType,
-            @NotBlank(message = "Owner phone is required") String ownerPhone) {
+            @NotBlank(message = "Owner phone is required")
+            @Pattern(regexp = ValidationPatterns.PHONE_10_DIGIT,
+                    message = "Owner phone must be exactly 10 digits, starting with 6-9")
+            String ownerPhone) {
 
-        // Accepts how people naturally type a plate (lowercase, spaces, hyphens) and normalizes it
-        // before the @Pattern check above runs, so "mh 12 ab-1234" still validates and stores as
-        // "MH12AB1234".
+        // Accepts how people naturally type a plate/phone (lowercase, spaces, hyphens) and
+        // normalizes it before the @Pattern checks above run, so "mh 12 ab-1234" and "98765 43210"
+        // still validate and store as "MH12AB1234" / "9876543210".
         public VehicleRequest {
             if (plateNumber != null) {
                 plateNumber = plateNumber.trim().toUpperCase().replaceAll("[\\s-]", "");
+            }
+            if (ownerPhone != null) {
+                ownerPhone = ownerPhone.trim().replaceAll("[\\s-]", "");
             }
         }
     }

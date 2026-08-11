@@ -18,9 +18,18 @@ public class VisitDtos {
             // a real 10-digit mobile number — @Pattern only runs against non-null values, and the
             // "^$|..." alternative lets an empty string through too, so this can't reject someone
             // simply not filling the field in.
-            @Pattern(regexp = "^$|^[0-9]{10}$", message = "Mobile number must be exactly 10 digits")
+            @Pattern(regexp = ValidationPatterns.OPTIONAL_PHONE_10_DIGIT,
+                    message = "Mobile number must be exactly 10 digits, starting with 6-9")
             String visitorPhone,
             @Email(message = "Enter a valid email address") String visitorEmail) {
+
+        // Normalizes natural typing ("98765 43210") before the @Pattern check above runs. Leaves
+        // null alone (no phone provided) rather than turning it into an empty string.
+        public CreateVisitRequest {
+            if (visitorPhone != null) {
+                visitorPhone = visitorPhone.trim().replaceAll("[\\s-]", "");
+            }
+        }
     }
 
     public record LookupVisitRequest(

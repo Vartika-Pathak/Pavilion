@@ -61,8 +61,17 @@ public class NoticesRulesServicesDtos {
     public record ServiceRequest(
             @NotBlank(message = "Name is required") String name,
             @NotBlank(message = "Category is required") String category,
-            @NotBlank(message = "Contact number is required") String contactNumber,
+            @NotBlank(message = "Contact number is required")
+            @Pattern(regexp = ValidationPatterns.PHONE_10_DIGIT,
+                    message = "Contact number must be exactly 10 digits, starting with 6-9")
+            String contactNumber,
             String notes) {
+
+        public ServiceRequest {
+            if (contactNumber != null) {
+                contactNumber = contactNumber.trim().replaceAll("[\\s-]", "");
+            }
+        }
     }
 
     // ---- Audit Logs ----
