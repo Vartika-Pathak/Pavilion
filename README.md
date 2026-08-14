@@ -1,19 +1,39 @@
 # Pavilion API (Java)
 
-A Java rewrite of the Pavilion community app's backend (originally Node/Express/Drizzle), built with **Spring Boot**, **Spring Data JPA**, and **SQLite**. The React frontend (from the `Society-App` repo, branch `claude/society-application-0mlog9`) talks to this backend — mostly unmodified, with a couple of small, backend-agnostic additions (see below) to support this backend's email-OTP verification steps.
+The backend for Pavilion, a residential society management app — sign-up/verification, visitor entry with OTPs and standing passes, maintenance and complaints, amenity bookings and parking passes, maintenance billing and collections, notices/events/gallery, emergency alerts, an audit trail, and a Gemini-powered help chatbot. Built with **Spring Boot**, **Spring Data JPA**, and **SQLite** (or MySQL — see below), with real Spring Security (JWT session cookies, role-based `@PreAuthorize` checks) rather than hand-rolled per-controller auth.
 
-Currently implemented:
-- **signup / login / logout / session** (`/api/auth/*`), protected by Google reCAPTCHA v2. Signup is two-step here: `POST /signup` stages the account and emails a 6-digit code; the account isn't actually created until `POST /signup/verify` is called with the correct code. (Login stays single-step.) Before that, a first-time resident submits `POST /api/auth/verification-requests` (just a name + flat number) instead of being auto-checked against a static list — an admin reviews it (see Admin below) and approves or rejects. The resident's "under review" screen polls `GET /api/auth/verification-requests/status` until it flips to `approved`. Both endpoints always return 200 (not 404 on "no match") so the frontend can tell "not approved yet" apart from "this backend doesn't have the endpoint at all" (the Node backend, which skips straight to the signup form instead of blocking everyone out). Signup optionally accepts a `familyMembers` array (name/relation/age each); those rows are created in `family_members` once the account itself is created via OTP verification — that's what powers the second, conditional "family details" page of the frontend signup flow.
-- **Admin** (`/api/admin/*`, role `admin` only, enforced with `@PreAuthorize`) — `GET /verification-requests` lists the queue of resident verification requests (pending first); `PATCH /verification-requests/{id}` toggles `documentsVerified`/`paymentReceived` (both manual — confirmed some other way, not through the app) and, once both are true, can set `action: "approve"` (or `"reject"` any time). There's no self-service way to become an admin — a role has to be set to `admin` directly in the database.
-- **Entry / visitor OTP** (`/api/visits/*`) — a resident creates a visit (guest, cab/delivery, or household help). If a visitor email is given, the visit starts as `awaiting_verification`: an OTP is emailed to the visitor, and the resident must confirm it via `POST /visits/{id}/confirm` before the visit becomes `pending` and usable at the gate — that's what proves the resident is actually in touch with a real visitor at that address. Without an email, the visit goes straight to `pending` (old behavior, OTP shown immediately). A guard or admin looks the visit up by OTP at the gate and approves or denies it.
-- **Emergency / Alerts** (`/api/emergency-alerts/*`) — matches the Node API exactly, no frontend changes needed. A resident raises a one-tap alert (idempotent — raising twice while one's already active just returns the existing one); every other resident, the guard, and admin can see it in the active-alerts list; the reporting resident, a guard, or an admin can resolve it.
-- **Chat assistant** (`/api/chat/*`, Java only, open to signed-out visitors too) — a floating widget on every page that answers questions about using the app, via Google Gemini's free-tier API. Conversation history is persisted server-side per browser-tab session (`chat_messages` table) and replayed as multi-turn context on every request, so the assistant can reference earlier turns rather than treating each message as a one-off. `GET /api/chat/suggestions` decides the quick-reply prompts server-side based on whether the caller is signed in, instead of the frontend hardcoding them. `POST /api/chat/message` is rate-limited per client IP (in-memory sliding window) since it's reachable by anyone, protecting Gemini's shared free-tier daily quota. Scoped with a system instruction to stick to app-usage questions, avoid markdown formatting, and decline anything else.
+This backend replaced an earlier Node/Express/Drizzle prototype; the React frontend (from the `Society-App` repo) is unmodified except for a handful of backend-agnostic additions to support flows the old backend didn't have (email-OTP verification, the chat widget).
 
-Because the signup/entry OTP flows and the chat assistant don't exist on the Node backend, the shared frontend's `signup.tsx`, `entry.tsx`, and the new `chat-widget.tsx` branch on the *shape* of the response (or just fail gracefully) rather than which backend is active — Node's plain, immediate responses take the old path unchanged; this backend's staged responses trigger the new OTP-entry screens, and a failed chat request just shows an inline "assistant unavailable" message. These endpoints are called with a small hand-written `apiPost` helper (`src/lib/api-fetch.ts` in the frontend) instead of the generated OpenAPI client, since they aren't part of the shared Node/Java API contract. Emergency/Alerts, by contrast, has no Java-only fields or flow differences, so it works through the existing generated hooks with zero frontend changes.
+## What's implemented
 
-**Field validation** (`jakarta.validation` annotations on the request DTOs in `dto/`, enforced server-side regardless of what the frontend does): names (a resident's own, and a visitor's) allow letters and spaces only — no digits or symbols; a visitor's mobile number, if given at all, has to be exactly 10 digits (it stays optional — this only fires when something's actually entered); a flat number has to be a single letter, a hyphen, then 1-3 digits (e.g. `A-100`); passwords are capped at 72 characters in addition to the existing 8-character minimum, since BCrypt (what they're hashed with) silently truncates anything longer, which would otherwise let two different long passwords collide; every OTP field (signup verification, visit confirmation, gate lookup) requires exactly 6 digits. A bad value gets a specific `field: message` 400 response rather than a generic error — see `GlobalExceptionHandler`.
+**Accounts & access**
+- Two-step signup (`/api/auth/*`) protected by Google reCAPTCHA v2 — `POST /signup` stages the account and emails a 6-digit code, `POST /signup/verify` creates it once that code is confirmed. Optionally accepts a `familyMembers` array, created once the account itself exists.
+- A first-time resident applies with just a name + flat number (`POST /api/auth/verification-requests`); an admin manually confirms documents/payment were handled some other way and approves or rejects the request (`/api/admin/verification-requests/*`) before that person can even reach the signup form. No self-service path to the `admin` role — set directly in the database.
+- Role-based access throughout: `resident`, `guard`, `admin`, enforced server-side with `@PreAuthorize`, not just hidden in the UI.
 
-More features (Maintenance, Complain, Amenities+Stripe) are being ported over next, one at a time.
+**Gate & visitor entry** (`/api/visits/*`)
+- A resident logs a visitor (guest, cab/delivery, household help, or maintenance staff) and gets a 6-digit OTP to share; a guard or admin looks it up at the gate and approves or denies it. If a visitor email is given, the OTP is emailed and the resident must confirm it before the entry is usable — proof they're actually in touch with that visitor.
+- Household help gets a **90-day standing pass** instead of a one-time code: the same OTP is re-checked and re-approved at the gate every day rather than being consumed after one use, and the resident can revoke it early if staff changes.
+- A society-wide **Entry Log** (guard/admin) shows every visit ever logged, who invited whom, and its current status, with a page-size selector.
+
+**Maintenance, complaints & emergencies**
+- Maintenance requests and complaints, each with photo uploads, category/status tracking, and a close-the-loop step where the resident confirms a "resolved" request before it's actually closed (or reopens it if it isn't).
+- One-tap emergency alerts, visible to every resident/guard/admin until the reporter, a guard, or an admin resolves them.
+
+**Amenities, billing & payments** (Stripe)
+- Free amenity bookings (clubhouse, pool) and paid ones (tennis court, party hall) via Stripe Checkout, in INR.
+- Vehicle registration and paid parking passes (Stripe), maintenance dues payable online per flat (Stripe), plus the underlying admin-side bookkeeping: maintenance settings/discounts/rates, special contributions, vendor bills and bill payments, and a manually-logged collections ledger (cash/cheque/UPI/bank transfer) — none of that is a live payment gateway, it's accounting records for money that moved outside the app.
+- Reports: maintenance due list, monthly collections/expenditure, income vs. expense trend, balance sheet, income statement.
+
+**Masters & content**
+- Society/Building/Flat masters, with flats independently assignable to resident accounts (and independently marked occupied — see the app's own "why does this flat show vacant" edge case if you're digging into the code).
+- Society notices, events, a member directory, and a **Gallery** the admin manages by uploading photo files directly (stored server-side, not pasted URLs) — they show up on the public Gallery page immediately.
+- A full audit log of every admin create/update/delete action.
+
+**Chat assistant** (`/api/chat/*`, open to signed-out visitors too)
+- A floating widget on every page, backed by Google Gemini's free-tier API, scoped to answering questions about using the app. Conversation history persists per browser-tab session and is replayed as context on every request. Rate-limited per client IP since it's reachable by anyone.
+
+**Field validation** (`jakarta.validation` on the request DTOs in `dto/`, enforced server-side regardless of what the frontend does): names allow letters and spaces only; any 10-digit mobile number field must start with 6–9 (India's valid mobile prefix range) when one is given; a flat number is a letter, a hyphen, then 1–3 digits (e.g. `A-100`); passwords are capped at 72 characters (BCrypt silently truncates longer ones, which would otherwise let two different passwords collide) on top of an 8-character minimum; every OTP field requires exactly 6 digits. A bad value gets a specific `field: message` 400 response — see `GlobalExceptionHandler`.
 
 ## Requirements
 
@@ -73,7 +93,7 @@ This repo includes a `Dockerfile` that builds and runs the API — Render (or an
 1. Sign up at [render.com](https://render.com) (no credit card needed for the free tier) and connect your GitHub account.
 2. **New → Web Service** → pick this repo (`Pavilion`) → Render should auto-detect the `Dockerfile`. If it asks for a runtime, choose **Docker**.
 3. Instance type: **Free**.
-4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `BREVO_API_KEY`, `MAIL_FROM`, `GEMINI_API_KEY`. Leave `PORT` alone — Render sets it automatically.
+4. Add environment variables (Settings → Environment) — see the table below. At minimum set `JWT_SECRET` (any long random string), `RECAPTCHA_SECRET_KEY`, `BREVO_API_KEY`, `MAIL_FROM`, `GEMINI_API_KEY`, `STRIPE_SECRET_KEY`. Leave `PORT` alone — Render sets it automatically.
 5. Deploy. Render gives you a URL like `https://pavilion-api-xxxx.onrender.com` — that's your live backend.
 6. Once the frontend is deployed too (see its own repo), come back and set `ALLOWED_ORIGIN` to the frontend's URL, and add that same URL to the allowed domains list in the [Google reCAPTCHA admin console](https://www.google.com/recaptcha/admin).
 
@@ -135,14 +155,13 @@ either way.
 .\mvnw.cmd test
 ```
 
-44 tests: full-context integration tests for every controller (`AuthControllerTest`,
-`VisitControllerTest`, `EmergencyAlertControllerTest`, `ChatControllerTest`) that go through
-`MockMvc` and the real Spring Security filter chain — the same JWT cookie auth, `@PreAuthorize`
-role checks, and JSON error responses a real request hits — against a throwaway in-memory SQLite
-database, plus focused unit tests for `JwtService`, `ChatRateLimiter`, and `GlobalExceptionHandler`
-(the last one specifically pins down the two exception-handling edge cases the Spring Security
-work above surfaced, so they can't silently regress). External calls (Gemini, reCAPTCHA) are
-mocked — nothing in the suite makes a real network call.
+298 tests: full-context integration tests for every controller — one test class each — that go
+through `MockMvc` and the real Spring Security filter chain (the same JWT cookie auth,
+`@PreAuthorize` role checks, and JSON error responses a real request hits) against a throwaway
+in-memory SQLite database, plus focused unit tests for `JwtService`, `ChatRateLimiter`, amenity
+slot logic, and `GlobalExceptionHandler` (which pins down exception-handling edge cases so they
+can't silently regress). External calls (Gemini, reCAPTCHA, Stripe) are mocked — nothing in the
+suite makes a real network call.
 
 ## Security, health checks, and API docs
 
@@ -181,6 +200,7 @@ Two small operational extras came along with that:
 | `BREVO_API_KEY` | unset (OTP emails are skipped until set) | API key from [brevo.com](https://www.brevo.com) used to send OTP emails |
 | `GEMINI_API_KEY` | unset (chat assistant returns 503 until set) | API key from [aistudio.google.com/apikey](https://aistudio.google.com/apikey), free tier, powers the chat widget |
 | `MAIL_FROM` | unset | "From" address for OTP emails — must be single-sender-verified in Brevo (see below). No default; both this and `BREVO_API_KEY` must be set for email to send at all |
+| `STRIPE_SECRET_KEY` | unset (paid amenity/parking/maintenance checkout fails until set) | Secret key from the [Stripe dashboard](https://dashboard.stripe.com/apikeys) — use a **test** key (`sk_test_...`) unless you actually intend to take real payments |
 
 ### Setting up email (Brevo)
 
