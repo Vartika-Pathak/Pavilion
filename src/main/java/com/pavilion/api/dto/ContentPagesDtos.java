@@ -22,11 +22,6 @@ public class ContentPagesDtos {
         }
     }
 
-    public record GalleryPhotoRequest(
-            @NotBlank(message = "Image URL is required") String imageUrl,
-            String title, String description, String uploadedBy) {
-    }
-
     // ---- Contact ----
 
     public record ContactMessageResponse(
