@@ -8,6 +8,9 @@ import com.pavilion.api.repository.VisitRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -218,6 +221,164 @@ class VisitControllerTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.status").value("approved"));
 
         assertThat(visitRepository.findById(visitId).orElseThrow().getApprovedBy().getId()).isEqualTo(guard.getId());
+    }
+
+    @Test
+    void anOrdinaryGuestOtpCannotBeReusedAfterItsDecided() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+
+        String created = mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567"}"""))
+                .andReturn().getResponse().getContentAsString();
+        String otpCode = JsonPath.read(created, "$.otpCode");
+        Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/decide")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("""
+                                {"approve":true}"""))
+                .andExpect(status().isOk());
+
+        // Same OTP, same day — a one-shot guest/cab/maintenance-staff entry stays used up.
+        mockMvc.perform(post("/api/visits/lookup")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"otpCode\":\"" + otpCode + "\"}"))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/decide")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("""
+                                {"approve":true}"""))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void householdHelpGetsALongStandingPassReusableEveryDay() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+
+        String created = mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"household_help","visitorName":"Sunita","visitorPhone":"9551234567"}"""))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String otpCode = JsonPath.read(created, "$.otpCode");
+        Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        Visit visit = visitRepository.findById(visitId).orElseThrow();
+        // Valid for months, not the usual 4 hours, since the same pass is meant to be reused daily.
+        assertThat(visit.getExpiresAt()).isAfter(Instant.now().plus(80, ChronoUnit.DAYS));
+
+        // Day one: guard looks it up and approves it, same as any other visit.
+        mockMvc.perform(post("/api/visits/lookup")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"otpCode\":\"" + otpCode + "\"}"))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/visits/" + visitId + "/decide")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("""
+                                {"approve":true}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("approved"));
+
+        // Day two (and beyond): the exact same OTP still resolves, and the guard can approve it again.
+        mockMvc.perform(post("/api/visits/lookup")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"otpCode\":\"" + otpCode + "\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.residentFlatNumber").value("A-1"));
+        mockMvc.perform(post("/api/visits/" + visitId + "/decide")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("""
+                                {"approve":true}"""))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("approved"));
+    }
+
+    @Test
+    void residentCanRevokeAStandingPassAndItStopsWorkingAtTheGate() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+
+        String created = mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"household_help","visitorName":"Sunita","visitorPhone":"9551234567"}"""))
+                .andReturn().getResponse().getContentAsString();
+        String otpCode = JsonPath.read(created, "$.otpCode");
+        Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/decide")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("""
+                                {"approve":true}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/revoke").cookie(sessionCookie(resident)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("revoked"));
+
+        mockMvc.perform(post("/api/visits/lookup")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("{\"otpCode\":\"" + otpCode + "\"}"))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void residentCannotRevokeAnotherResidentsVisit() throws Exception {
+        User resident = createUser("resident");
+        User otherResident = createUser("resident");
+
+        String created = mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567"}"""))
+                .andReturn().getResponse().getContentAsString();
+        Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/revoke").cookie(sessionCookie(otherResident)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void cannotRevokeAVisitThatsAlreadyDecided() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+
+        String created = mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567"}"""))
+                .andReturn().getResponse().getContentAsString();
+        Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/decide")
+                        .cookie(sessionCookie(guard))
+                        .contentType("application/json")
+                        .content("""
+                                {"approve":false}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/visits/" + visitId + "/revoke").cookie(sessionCookie(resident)))
+                .andExpect(status().isConflict());
     }
 
     @Test

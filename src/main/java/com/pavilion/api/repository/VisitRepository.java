@@ -12,5 +12,5 @@ public interface VisitRepository extends JpaRepository<Visit, Long> {
 
     List<Visit> findAllByOrderByCreatedAtDesc();
 
-    Optional<Visit> findByOtpCodeAndStatus(String otpCode, String status);
+    Optional<Visit> findByOtpCode(String otpCode);
 }

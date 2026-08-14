@@ -19,8 +19,8 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 // Every endpoint here requires authentication (see SecurityConfig's default
@@ -40,6 +40,11 @@ public class VisitController {
         this.emailService = emailService;
     }
 
+    // Household help comes back every day, so their code isn't a one-shot 4-hour OTP like a
+    // guest's — it's a standing pass the resident sets up once and the guard re-checks daily.
+    private static final Duration STANDING_PASS_VALIDITY = Duration.ofDays(90);
+    private static final Duration OTP_VALIDITY = Duration.ofHours(4);
+
     @PostMapping
     public VisitResponse create(@Valid @RequestBody CreateVisitRequest body, @AuthenticationPrincipal User resident) {
         boolean hasEmail = body.visitorEmail() != null && !body.visitorEmail().isBlank();
@@ -56,7 +61,7 @@ public class VisitController {
         // visit is usable at the gate — that's what proves they're really in touch with that visitor.
         // Without an email there's nothing to verify, so fall back to the old immediate flow.
         visit.setStatus(hasEmail ? "awaiting_verification" : "pending");
-        visit.setExpiresAt(Instant.now().plus(4, ChronoUnit.HOURS));
+        visit.setExpiresAt(Instant.now().plus(isStandingPass(visit) ? STANDING_PASS_VALIDITY : OTP_VALIDITY));
         visit = visitRepository.save(visit);
 
         if (hasEmail) {
@@ -111,7 +116,8 @@ public class VisitController {
     @PreAuthorize("hasRole('GUARD') or hasRole('ADMIN')")
     @PostMapping("/lookup")
     public VisitLookupResult lookup(@Valid @RequestBody LookupVisitRequest body) {
-        Visit visit = visitRepository.findByOtpCodeAndStatus(body.otpCode(), "pending")
+        Visit visit = visitRepository.findByOtpCode(body.otpCode())
+                .filter(VisitController::isLookupable)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "No pending visit with that OTP"));
 
         if (visit.getExpiresAt().isBefore(Instant.now())) {
@@ -128,7 +134,7 @@ public class VisitController {
         Visit visit = visitRepository.findById(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Visit not found"));
 
-        if (!"pending".equals(visit.getStatus())) {
+        if (!isLookupable(visit)) {
             throw new ApiException(HttpStatus.CONFLICT, "This visit has already been decided");
         }
 
@@ -140,7 +146,44 @@ public class VisitController {
         return VisitResponse.from(visit);
     }
 
+    // A resident can call off a visit they logged before it's used — most usefully a household
+    // help standing pass whose staff has left, but works the same for an ordinary pending OTP
+    // they no longer need.
+    @PostMapping("/{id}/revoke")
+    public VisitResponse revoke(@PathVariable Long id, @AuthenticationPrincipal User resident) {
+        Visit visit = visitRepository.findById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "Visit not found"));
+
+        if (!visit.getResident().getId().equals(resident.getId())) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "This isn't your visit");
+        }
+        if (!isLookupable(visit)) {
+            throw new ApiException(HttpStatus.CONFLICT, "This entry is no longer active");
+        }
+
+        visit.setStatus("revoked");
+        visit.setRespondedAt(Instant.now());
+        visit = visitRepository.save(visit);
+
+        return VisitResponse.from(visit);
+    }
+
     private static String generateOtpCode() {
         return String.valueOf(100000 + RANDOM.nextInt(900000));
+    }
+
+    private static boolean isStandingPass(Visit visit) {
+        return "household_help".equals(visit.getVisitType());
+    }
+
+    // A visit is still usable at the gate — findable by lookup(), re-decidable by decide(),
+    // revocable by revoke() — while pending its first decision, or (for a standing pass only)
+    // after it's already been approved once, since the same pass gets rechecked every day rather
+    // than being consumed by a single entry.
+    private static boolean isLookupable(Visit visit) {
+        if ("pending".equals(visit.getStatus())) {
+            return true;
+        }
+        return isStandingPass(visit) && "approved".equals(visit.getStatus());
     }
 }

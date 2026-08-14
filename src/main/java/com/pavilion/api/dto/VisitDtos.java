@@ -99,7 +99,7 @@ public class VisitDtos {
     }
 
     // Every visit ever logged, for the society-wide entry log (guard/admin) — unlike
-    // VisitLookupResult (gate flow, pending only), this covers every status.
+    // VisitLookupResult (gate flow, only visits currently usable at the gate), this covers every status.
     public record VisitLogEntry(
             Long id,
             String visitType,
