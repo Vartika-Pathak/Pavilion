@@ -10,5 +10,7 @@ import java.util.Optional;
 public interface VisitRepository extends JpaRepository<Visit, Long> {
     List<Visit> findByResidentOrderByCreatedAtDesc(User resident);
 
+    List<Visit> findAllByOrderByCreatedAtDesc();
+
     Optional<Visit> findByOtpCodeAndStatus(String otpCode, String status);
 }

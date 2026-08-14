@@ -221,6 +221,33 @@ class VisitControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void guardAndAdminCanListAllVisitsButResidentCannot() throws Exception {
+        User resident = createUser("resident");
+        User guard = createUser("guard");
+        User admin = createUser("admin");
+
+        mockMvc.perform(post("/api/visits")
+                        .cookie(sessionCookie(resident))
+                        .contentType("application/json")
+                        .content("""
+                                {"visitType":"maintenance_staff","visitorName":"Sam","visitorPhone":"9551234567"}"""))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/visits").cookie(sessionCookie(guard)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].visitorName").value("Sam"))
+                .andExpect(jsonPath("$[0].visitType").value("maintenance_staff"))
+                .andExpect(jsonPath("$[0].residentFlatNumber").value("A-1"));
+
+        mockMvc.perform(get("/api/visits").cookie(sessionCookie(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].visitorName").value("Sam"));
+
+        mockMvc.perform(get("/api/visits").cookie(sessionCookie(resident)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void adminCanAlsoDecideAVisit() throws Exception {
         User resident = createUser("resident");
         User admin = createUser("admin");

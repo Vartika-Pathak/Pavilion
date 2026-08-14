@@ -10,7 +10,7 @@ import java.time.Instant;
 public class VisitDtos {
 
     public record CreateVisitRequest(
-            @NotBlank @Pattern(regexp = "cab_delivery|guest|household_help") String visitType,
+            @NotBlank @Pattern(regexp = "cab_delivery|guest|household_help|maintenance_staff") String visitType,
             @NotBlank(message = "Visitor name is required")
             @Pattern(regexp = "^[A-Za-z ]{2,100}$", message = "Visitor name can only contain letters and spaces")
             String visitorName,
@@ -88,6 +88,33 @@ public class VisitDtos {
 
         public static VisitLookupResult from(Visit visit, User resident) {
             return new VisitLookupResult(
+                    visit.getId(),
+                    visit.getVisitType(),
+                    visit.getVisitorName(),
+                    visit.getVisitorPhone(),
+                    visit.getStatus(),
+                    visit.getExpiresAt(),
+                    visit.getCreatedAt(),
+                    resident.getName(),
+                    resident.getFlatNumber());
+        }
+    }
+
+    // Every visit ever logged, for the society-wide entry log (guard/admin) — unlike
+    // VisitLookupResult (gate flow, pending only), this covers every status.
+    public record VisitLogEntry(
+            Long id,
+            String visitType,
+            String visitorName,
+            String visitorPhone,
+            String status,
+            Instant expiresAt,
+            Instant createdAt,
+            String residentName,
+            String residentFlatNumber) {
+
+        public static VisitLogEntry from(Visit visit, User resident) {
+            return new VisitLogEntry(
                     visit.getId(),
                     visit.getVisitType(),
                     visit.getVisitorName(),

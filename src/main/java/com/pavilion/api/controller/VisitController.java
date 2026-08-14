@@ -4,6 +4,7 @@ import com.pavilion.api.dto.VisitDtos.ConfirmVisitRequest;
 import com.pavilion.api.dto.VisitDtos.CreateVisitRequest;
 import com.pavilion.api.dto.VisitDtos.DecideVisitRequest;
 import com.pavilion.api.dto.VisitDtos.LookupVisitRequest;
+import com.pavilion.api.dto.VisitDtos.VisitLogEntry;
 import com.pavilion.api.dto.VisitDtos.VisitLookupResult;
 import com.pavilion.api.dto.VisitDtos.VisitResponse;
 import com.pavilion.api.entity.User;
@@ -94,6 +95,16 @@ public class VisitController {
     public List<VisitResponse> mine(@AuthenticationPrincipal User resident) {
         return visitRepository.findByResidentOrderByCreatedAtDesc(resident).stream()
                 .map(VisitResponse::from)
+                .toList();
+    }
+
+    // The society-wide entry log: every visit ever logged, newest first, so a guard or admin can
+    // see who's come and gone (and who let them in) rather than only the currently pending ones.
+    @PreAuthorize("hasRole('GUARD') or hasRole('ADMIN')")
+    @GetMapping
+    public List<VisitLogEntry> all() {
+        return visitRepository.findAllByOrderByCreatedAtDesc().stream()
+                .map(v -> VisitLogEntry.from(v, v.getResident()))
                 .toList();
     }
 
