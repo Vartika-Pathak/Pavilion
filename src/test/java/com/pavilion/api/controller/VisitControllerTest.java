@@ -58,7 +58,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex99"}"""))
+                                {"visitType":"guest","visitorName":"Alex99","visitorPhone":"9551234567"}"""))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("visitorName: Visitor name can only contain letters and spaces"));
     }
@@ -97,7 +97,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void visitorPhoneStaysOptional() throws Exception {
+    void visitorPhoneIsRequired() throws Exception {
         User resident = createUser("resident");
 
         mockMvc.perform(post("/api/visits")
@@ -105,8 +105,8 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .contentType("application/json")
                         .content("""
                                 {"visitType":"guest","visitorName":"Alex"}"""))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.visitorPhone").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("visitorPhone: Visitor phone is required"));
     }
 
     @Test
@@ -130,7 +130,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorEmail":"alex.visitor@test.local"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567","visitorEmail":"alex.visitor@test.local"}"""))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("awaiting_verification"))
                 .andExpect(jsonPath("$.otpCode").doesNotExist())
@@ -156,7 +156,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"guest","visitorName":"Alex","visitorEmail":"alex.visitor2@test.local"}"""))
+                                {"visitType":"guest","visitorName":"Alex","visitorPhone":"9551234567","visitorEmail":"alex.visitor2@test.local"}"""))
                 .andReturn().getResponse().getContentAsString();
         Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
         Visit visit = visitRepository.findById(visitId).orElseThrow();
@@ -256,7 +256,7 @@ class VisitControllerTest extends AbstractIntegrationTest {
                         .cookie(sessionCookie(resident))
                         .contentType("application/json")
                         .content("""
-                                {"visitType":"household_help","visitorName":"Jamie"}"""))
+                                {"visitType":"household_help","visitorName":"Jamie","visitorPhone":"9551234567"}"""))
                 .andReturn().getResponse().getContentAsString();
         Long visitId = ((Number) JsonPath.read(created, "$.id")).longValue();
 

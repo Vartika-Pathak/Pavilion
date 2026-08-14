@@ -14,17 +14,15 @@ public class VisitDtos {
             @NotBlank(message = "Visitor name is required")
             @Pattern(regexp = "^[A-Za-z ]{2,100}$", message = "Visitor name can only contain letters and spaces")
             String visitorName,
-            // Optional (a visit doesn't require a phone number), but if one is given it has to be
-            // a real 10-digit mobile number — @Pattern only runs against non-null values, and the
-            // "^$|..." alternative lets an empty string through too, so this can't reject someone
-            // simply not filling the field in.
-            @Pattern(regexp = ValidationPatterns.OPTIONAL_PHONE_10_DIGIT,
+            // The guard needs a way to reach the visitor directly, so a phone number is required —
+            // unlike email below, which stays optional (only used for the extra OTP-confirmation step).
+            @NotBlank(message = "Visitor phone is required")
+            @Pattern(regexp = ValidationPatterns.PHONE_10_DIGIT,
                     message = "Mobile number must be exactly 10 digits, starting with 6-9")
             String visitorPhone,
             @Email(message = "Enter a valid email address") String visitorEmail) {
 
-        // Normalizes natural typing ("98765 43210") before the @Pattern check above runs. Leaves
-        // null alone (no phone provided) rather than turning it into an empty string.
+        // Normalizes natural typing ("98765 43210") before the @Pattern check above runs.
         public CreateVisitRequest {
             if (visitorPhone != null) {
                 visitorPhone = visitorPhone.trim().replaceAll("[\\s-]", "");
