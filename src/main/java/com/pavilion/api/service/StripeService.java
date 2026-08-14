@@ -50,7 +50,7 @@ public class StripeService {
                     .addLineItem(SessionCreateParams.LineItem.builder()
                             .setQuantity(1L)
                             .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
-                                    .setCurrency("usd")
+                                    .setCurrency("inr")
                                     .setUnitAmount((long) amenity.priceCents())
                                     .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
                                             .setName(amenity.name() + " — " + bookingDate + " (" + slot + ")")
@@ -72,8 +72,6 @@ public class StripeService {
         }
     }
 
-    // Amenities use USD (a faithful port of the Node original's placeholder pricing) — maintenance
-    // dues are stored in paise, which is unambiguously INR, so this charges in INR instead.
     // Stripe's unit_amount for INR is already the smallest unit (paise), same as our own storage,
     // so no conversion is needed.
     public CheckoutSessionResult createMaintenanceCheckoutSession(

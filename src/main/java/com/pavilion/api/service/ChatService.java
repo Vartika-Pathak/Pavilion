@@ -62,7 +62,7 @@ public class ChatService {
             - Maintenance requests (once signed in): report an issue (plumbing, electrical, appliance, \
             structural, or other), with a description and optional photos. Building staff update its status as \
             they work on it. If it's urgent, or it's been logged and nothing's happened, residents can also reach \
-            the committee directly at committee@pavilion.example.com or 020 7946 0958 to chase it up.
+            the committee directly at committee@pavilion.example.com or +91 22 4589 6723 to chase it up.
             - Complaints (once signed in): raise a complaint (maintenance, security, noise, or other) with a \
             description, and track its status until it's resolved. The same direct contact applies if it needs \
             faster attention than the in-app status update.
@@ -73,7 +73,7 @@ public class ChatService {
             - Residents can also check community events and resident meetings, read news, and browse the photo \
             gallery.
             - For anything outside what the app itself handles — billing questions, building policies, or \
-            reaching a real person — the committee is at committee@pavilion.example.com or 020 7946 0958, also \
+            reaching a real person — the committee is at committee@pavilion.example.com or +91 22 4589 6723, also \
             listed on the Contact page.
 
             This app is for existing residents (and people actively signing up to become one) — not a place for \
